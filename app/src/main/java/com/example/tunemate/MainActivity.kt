@@ -43,7 +43,7 @@ import com.example.tunemate.data.savePlaylists
 import com.example.tunemate.model.Playlist
 import com.example.tunemate.model.Song
 import com.example.tunemate.playback.PlaybackService
-import com.example.tunemate.tuner.TunerScreen
+import com.example.tunemate.equalizer.EqualizerScreen
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -204,11 +204,11 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
                     label = { Text("播放器") }
                 )
                 NavigationBarItem(
-                    selected = tab == 1,
-                    onClick = { tab = 1 },
-                    icon = { Icon(Icons.Default.GraphicEq, contentDescription = null) },
-                    label = { Text("调音器") }
-                )
+    selected = tab == 1,
+    onClick = { tab = 1 },
+    icon = { Icon(Icons.Default.Equalizer, contentDescription = null) },
+    label = { Text("均衡器") }
+)
             }
         }
     ) { padding ->
@@ -224,7 +224,7 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
                     onRequestSongs = onRequestSongs,
                     onCreatePlaylist = { showCreateDialog = true }
                 )
-                1 -> TunerScreen()
+                1 -> EqualizerScreen()
             }
         }
     }
