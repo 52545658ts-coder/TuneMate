@@ -7,9 +7,6 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- 调音器麦克风 -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
     <!-- 前台播放服务 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
