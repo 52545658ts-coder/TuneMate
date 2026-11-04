@@ -1,8 +1,7 @@
 package com.example.tunemate.equalizer
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,16 +16,19 @@ fun EqualizerScreen() {
 
     if (eq == null) {
         Column(
-            Modifier.fillMaxSize().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("均衡器", style = MaterialTheme.typography.headlineMedium, color = Color.White)
-            Spacer(Modifier.height(24.dp))
             Text(
-                "均衡器會在音樂開始播放後自動啟用。\n請先回到「播放器」分頁，選一首歌播放，再回來調整。",
+                "均衡器",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color(0xFF4FC3F7)
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "均衡器會在音樂開始播放後自動啟用。\n請先回到播放器播放一首歌，再回來調整。",
                 color = Color.LightGray,
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyMedium
             )
         }
         return
@@ -37,7 +39,6 @@ fun EqualizerScreen() {
     val minLevel = range[0].toInt()
     val maxLevel = range[1].toInt()
 
-    // 每個 band 的目前值（單位 mB，100 mB = 1 dB）
     val bandLevels = remember(eq) {
         mutableStateListOf<Int>().apply {
             for (b in 0 until numBands) add(eq.getBandLevel(b.toShort()).toInt())
@@ -46,15 +47,14 @@ fun EqualizerScreen() {
     var enabled by remember(eq) { mutableStateOf(eq.enabled) }
     var currentPreset by remember(eq) { mutableIntStateOf(eq.currentPreset.toInt()) }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        // 標題與開關
+    Column(Modifier.fillMaxWidth()) {
+        // 标题 + 开关
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("均衡器", style = MaterialTheme.typography.headlineMedium, color = Color.White)
+            Text(
+                "均衡器",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color(0xFF4FC3F7)
+            )
             Spacer(Modifier.weight(1f))
             Switch(
                 checked = enabled,
@@ -66,7 +66,8 @@ fun EqualizerScreen() {
         }
 
         Spacer(Modifier.height(8.dp))
-        // 低音 / 中音 / 高音 區間提示
+
+        // 低 / 中 / 高音提示
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -76,10 +77,9 @@ fun EqualizerScreen() {
             Text("高音", color = Color(0xFFFFB74D), fontWeight = FontWeight.Bold)
         }
         HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
-
         Spacer(Modifier.height(8.dp))
 
-        // 每個 band 一個滑桿
+        // 每个 band 一个滑杆
         for (b in 0 until numBands) {
             val centerHz = eq.getCenterFreq(b.toShort()) / 1000f // mHz → Hz
             val level = bandLevels[b]
@@ -111,14 +111,12 @@ fun EqualizerScreen() {
         }
 
         Spacer(Modifier.height(8.dp))
-        Row {
-            OutlinedButton(onClick = {
-                for (b in 0 until numBands) {
-                    bandLevels[b] = 0
-                    runCatching { eq.setBandLevel(b.toShort(), 0) }
-                }
-            }) { Text("全部歸零") }
-        }
+        OutlinedButton(onClick = {
+            for (b in 0 until numBands) {
+                bandLevels[b] = 0
+                runCatching { eq.setBandLevel(b.toShort(), 0) }
+            }
+        }) { Text("全部歸零") }
 
         Spacer(Modifier.height(20.dp))
         Text("預設音效", color = Color.White, fontWeight = FontWeight.Bold)
@@ -128,7 +126,17 @@ fun EqualizerScreen() {
         for (p in 0 until presetCount) {
             val name = runCatching { eq.getPresetName(p.toShort()) }.getOrDefault("Preset $p")
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        runCatching {
+                            eq.usePreset(p.toShort())
+                            currentPreset = p
+                            for (b in 0 until numBands) {
+                                bandLevels[b] = eq.getBandLevel(b.toShort()).toInt()
+                            }
+                        }
+                    },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 RadioButton(
@@ -150,9 +158,9 @@ fun EqualizerScreen() {
 }
 
 private fun bandColor(hz: Float): Color = when {
-    hz < 500f -> Color(0xFF4FC3F7)   // 低音（藍）
-    hz < 4000f -> Color(0xFF81C784)  // 中音（綠）
-    else -> Color(0xFFFFB74D)        // 高音（橙）
+    hz < 500f -> Color(0xFF4FC3F7)   // 低音
+    hz < 4000f -> Color(0xFF81C784)  // 中音
+    else -> Color(0xFFFFB74D)        // 高音
 }
 
 private fun formatHz(hz: Float): String =
