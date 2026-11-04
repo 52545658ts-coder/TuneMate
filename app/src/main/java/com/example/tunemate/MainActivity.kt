@@ -56,6 +56,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.safeDrawingPadding
 import com.example.tunemate.data.saveBackgroundImage
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableLongStateOf
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
@@ -269,6 +271,30 @@ fun PlayerScreen(
     onOpenSettings: () -> Unit
 ) {
     var activeList by remember { mutableStateOf<List<Song>>(emptyList()) }
+    // 时间轴状态
+var positionMs by remember { mutableLongStateOf(0L) }
+var durationMs by remember { mutableLongStateOf(0L) }
+var isDragging by remember { mutableStateOf(false) }
+var dragPosition by remember { mutableFloatStateOf(0f) }
+
+// 每 500ms 更新一次播放进度（拖拽时不覆盖）
+LaunchedEffect(player) {
+    while (true) {
+        if (!isDragging) {
+            positionMs = player.currentPosition.coerceAtLeast(0L)
+            val d = player.duration
+            durationMs = if (d > 0L) d else 0L
+        }
+        delay(500)
+    }
+}
+
+// 切歌时重置拖拽状态
+LaunchedEffect(currentSong) {
+    isDragging = false
+    positionMs = 0L
+    durationMs = 0L
+}
 
     Box(Modifier.fillMaxSize()) {
         // ---- 背景层 ----
@@ -391,6 +417,39 @@ fun PlayerScreen(
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
+
+            // ---- 时间轴 ----
+Spacer(Modifier.height(4.dp))
+Row(verticalAlignment = Alignment.CenterVertically) {
+    Text(
+        formatTime(if (isDragging) dragPosition.toLong() else positionMs),
+        color = Color.LightGray,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.width(44.dp)
+    )
+    Slider(
+        value = if (isDragging) dragPosition
+                else positionMs.toFloat().coerceIn(0f, (if (durationMs > 0) durationMs.toFloat() else 1f)),
+        onValueChange = {
+            isDragging = true
+            dragPosition = it
+        },
+        onValueChangeFinished = {
+            player.seekTo(dragPosition.toLong())
+            positionMs = dragPosition.toLong()
+            isDragging = false
+        },
+        valueRange = 0f..(if (durationMs > 0) durationMs.toFloat() else 1f),
+        enabled = durationMs > 0L,
+        modifier = Modifier.weight(1f).height(32.dp)
+    )
+    Text(
+        formatTime(durationMs),
+        color = Color.LightGray,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.width(44.dp)
+    )
+}
 
             // ---- 播放控制列 ----
             Row(
@@ -767,4 +826,12 @@ private fun playList(player: Player, list: List<Song>, startIndex: Int) {
     player.setMediaItems(items, startIndex.coerceIn(0, items.lastIndex), 0L)
     player.prepare()
     player.play()
+}
+
+private fun formatTime(ms: Long): String {
+    if (ms <= 0L) return "0:00"
+    val totalSec = ms / 1000
+    val min = totalSec / 60
+    val sec = totalSec % 60
+    return "%d:%02d".format(min, sec)
 }
