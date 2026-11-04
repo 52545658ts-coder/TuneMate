@@ -3,6 +3,7 @@ package com.example.tunemate
 import android.Manifest
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -68,6 +69,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,6 +78,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,19 +97,23 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
 import com.example.tunemate.data.backgroundFlow
+import com.example.tunemate.data.buildSongFromUri
 import com.example.tunemate.data.playlistsFlow
-import com.example.tunemate.data.queryAudioFiles
 import com.example.tunemate.data.saveBackground
 import com.example.tunemate.data.saveBackgroundImage
 import com.example.tunemate.data.savePlaylists
+import com.example.tunemate.data.saveSongs
+import com.example.tunemate.data.songsFlow
 import com.example.tunemate.equalizer.EqualizerScreen
 import com.example.tunemate.model.Playlist
 import com.example.tunemate.model.Song
 import com.example.tunemate.playback.PlaybackService
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /* ============================================================
  * 播放模式
@@ -122,12 +129,6 @@ enum class PlayMode {
  * ============================================================ */
 class MainActivity : ComponentActivity() {
 
-    private var songs by mutableStateOf<List<Song>>(emptyList())
-
-    private val audioPermLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) refreshSongs() }
-
     private val notifPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* 忽略 */ }
@@ -142,27 +143,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                AppRoot(
-                    songs = songs,
-                    onRequestSongs = { requestAudioPermission() }
-                )
+                AppRoot()
             }
         }
 
         requestNotifPermissionIfNeeded()
-        maybeRefresh()
-    }
-
-    private fun requestAudioPermission() {
-        val perm = if (Build.VERSION.SDK_INT >= 33)
-            Manifest.permission.READ_MEDIA_AUDIO
-        else
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        if (checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED) {
-            refreshSongs()
-        } else {
-            audioPermLauncher.launch(perm)
-        }
     }
 
     private fun requestNotifPermissionIfNeeded() {
@@ -171,20 +156,6 @@ class MainActivity : ComponentActivity() {
         ) {
             notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-    }
-
-    private fun maybeRefresh() {
-        val perm = if (Build.VERSION.SDK_INT >= 33)
-            Manifest.permission.READ_MEDIA_AUDIO
-        else
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        if (checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED) {
-            refreshSongs()
-        }
-    }
-
-    private fun refreshSongs() {
-        songs = queryAudioFiles(contentResolver)
     }
 }
 
@@ -221,9 +192,41 @@ private fun rememberMediaController(context: Context): MediaController? {
  * 根 UI
  * ============================================================ */
 @Composable
-fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
+fun AppRoot() {
     val context = LocalContext.current
     val controller = rememberMediaController(context)
+    val scope = rememberCoroutineScope()
+
+    // 已匯入歌曲（持久化於 DataStore），只包含使用者手動挑選的音頻
+    val songs by context.songsFlow().collectAsState(initial = emptyList())
+    // Player.Listener 只建立一次，需要讀取最新 songs，故用 rememberUpdatedState 包裝
+    val songsState = rememberUpdatedState(songs)
+
+    // ---------- 系統音頻選擇器（支援多選） ----------
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            val existing = context.songsFlow().first()
+            val picked = withContext(Dispatchers.IO) {
+                uris.mapNotNull { uri ->
+                    // 取得可跨重啟存取的讀取權限
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    }
+                    buildSongFromUri(context, uri)
+                }
+            }
+            if (picked.isNotEmpty()) {
+                val merged = (existing + picked).distinctBy { it.uriString }
+                context.saveSongs(merged)
+            }
+        }
+    }
 
     if (controller == null) {
         Box(
@@ -246,7 +249,6 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
 
     var backgroundUri by remember { mutableStateOf<Uri?>(null) }
     var blurRadius by remember { mutableFloatStateOf(12f) }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         context.playlistsFlow().collect { playlists = it }
@@ -265,7 +267,8 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
 
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 val uri = item?.localConfiguration?.uri?.toString() ?: return
-                currentSong = songs.firstOrNull { it.uriString == uri }
+                val currentSongs = songsState.value
+                currentSong = currentSongs.firstOrNull { it.uriString == uri }
                     ?: activeSongs.firstOrNull { it.uriString == uri }
             }
 
@@ -280,7 +283,7 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
         controller.addListener(listener)
         isPlaying = controller.isPlaying
         val cur = controller.currentMediaItem?.localConfiguration?.uri?.toString()
-        currentSong = cur?.let { u -> songs.firstOrNull { it.uriString == u } }
+        currentSong = cur?.let { u -> songsState.value.firstOrNull { it.uriString == u } }
         onDispose { controller.removeListener(listener) }
     }
 
@@ -362,7 +365,7 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
                 backgroundUri = backgroundUri,
                 blurRadius = blurRadius,
                 activeSongs = activeSongs,
-                onRequestSongs = onRequestSongs,
+                onRequestSongs = { importLauncher.launch(arrayOf("audio/*")) },
                 onCreatePlaylist = { showCreateDialog = true },
                 onPlaySong = { list, idx -> playFrom(list, idx) },
                 onCyclePlayMode = { cyclePlayMode() },
