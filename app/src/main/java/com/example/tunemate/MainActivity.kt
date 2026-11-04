@@ -226,8 +226,8 @@ fun AppRoot() {
     val playlists by playlistsFlow.collectAsState(initial = emptyList())
 
     val songsState = rememberUpdatedState(songs)
-    val activeSongsState = rememberUpdatedState<List<Song>>(emptyList())
-    val playModeState = rememberUpdatedState(PlayMode.REPEAT_ALL)
+    val activeSongsState = remember { mutableStateOf<List<Song>>(emptyList()) }
+    val playModeState = remember { mutableStateOf(PlayMode.REPEAT_ALL) }
 
     // 播放狀態
     var currentSong by remember { mutableStateOf<Song?>(null) }
