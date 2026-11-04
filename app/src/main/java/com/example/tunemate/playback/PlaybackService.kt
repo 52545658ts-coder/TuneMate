@@ -54,6 +54,8 @@ class PlaybackService : MediaSessionService() {
     private fun releaseEqualizer() {
         equalizer?.let {
             EqualizerHolder.detach(it)
+            // 先關閉再釋放，避免部分裝置出現短暫爆音
+            runCatching { it.enabled = false }
             runCatching { it.release() }
         }
         equalizer = null
