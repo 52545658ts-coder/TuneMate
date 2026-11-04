@@ -431,22 +431,30 @@ fun PlayerScreen(
                     )
                 }
 
-                IconButton(onClick = {
-                    player.repeatMode = if (player.repeatMode == Player.REPEAT_MODE_ONE)
-                        Player.REPEAT_MODE_ALL
-                    else
-                        Player.REPEAT_MODE_ONE
-                }) {
-                    Icon(
-                        if (repeatMode == Player.REPEAT_MODE_ONE)
-                            Icons.Default.RepeatOne
-                        else
-                            Icons.Default.Repeat,
-                        if (repeatMode == Player.REPEAT_MODE_ONE) "單曲循環" else "歌單循環",
-                        tint = Color(0xFF4FC3F7),
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
+               IconButton(onClick = {
+    player.repeatMode = when (player.repeatMode) {
+        Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_OFF
+        else -> Player.REPEAT_MODE_ONE
+    }
+}) {
+    Icon(
+        imageVector = when (repeatMode) {
+            Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
+            else -> Icons.Default.Repeat
+        },
+        contentDescription = when (repeatMode) {
+            Player.REPEAT_MODE_ONE -> "單曲循環"
+            Player.REPEAT_MODE_ALL -> "歌單循環"
+            else -> "停止循環"
+        },
+        tint = if (repeatMode == Player.REPEAT_MODE_OFF)
+            Color.Gray
+        else
+            Color(0xFF4FC3F7),
+        modifier = Modifier.size(32.dp)
+    )
+}
             }
         }
     }
