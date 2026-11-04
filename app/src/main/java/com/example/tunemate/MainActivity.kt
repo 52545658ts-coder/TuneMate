@@ -54,6 +54,8 @@ import kotlinx.coroutines.launch
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.safeDrawingPadding
+import com.example.tunemate.data.saveBackgroundImage
+import androidx.compose.runtime.rememberCoroutineScope
 
 class MainActivity : ComponentActivity() {
 
@@ -565,13 +567,23 @@ private fun BackgroundSettingsPage(
     onBackgroundChanged: (Uri?, Float) -> Unit,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var pendingBlur by remember(blurRadius) { mutableFloatStateOf(blurRadius) }
+    var saving by remember { mutableStateOf(false) }
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            onBackgroundChanged(uri, pendingBlur)
+            saving = true
+            scope.launch {
+                val saved = context.saveBackgroundImage(uri)
+                if (saved != null) {
+                    onBackgroundChanged(saved, pendingBlur)
+                }
+                saving = false
+            }
         }
     }
 
@@ -595,12 +607,15 @@ private fun BackgroundSettingsPage(
 
         Spacer(Modifier.height(24.dp))
 
-        Row {
-            Button(onClick = {
-                imagePicker.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-            }) { Text("更換背景圖片") }
+                Row {
+            Button(
+                enabled = !saving,
+                onClick = {
+                    imagePicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                }
+            ) { Text(if (saving) "正在儲存…" else "更換背景圖片") }
             if (backgroundUri != null) {
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = { onBackgroundChanged(null, pendingBlur) }) {
