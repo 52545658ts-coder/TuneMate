@@ -287,7 +287,7 @@ fun PlayerScreen(
         }
 
         // ---- 内容层 ----
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
             // 顶栏：标题 + 设置按钮
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -497,13 +497,13 @@ private fun SettingsMainPage(
     onOpenEqualizer: () -> Unit,
     onBack: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
-            }
-            Text(
-                "設置",
+    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) {
+            Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+        }
+        Text(
+            "設置",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White
             )
@@ -576,17 +576,18 @@ private fun BackgroundSettingsPage(
     }
 
     Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
-            }
-            Text(
-                "背景設定",
+    Modifier
+        .fillMaxSize()
+        .safeDrawingPadding()
+        .verticalScroll(rememberScrollState())
+        .padding(16.dp)
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) {
+            Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+        }
+        Text(
+            "背景設定",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White
             )
@@ -650,17 +651,18 @@ private fun BackgroundSettingsPage(
 @Composable
 private fun EqualizerSettingsPage(onBack: () -> Unit) {
     Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
-            }
-            Text(
-                "均衡器",
+    Modifier
+        .fillMaxSize()
+        .safeDrawingPadding()
+        .verticalScroll(rememberScrollState())
+        .padding(16.dp)
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) {
+            Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+        }
+        Text(
+            "均衡器",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White
             )
