@@ -59,6 +59,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableLongStateOf
 import kotlinx.coroutines.delay
 
+enum class PlayMode {
+    REPEAT_ONE,   // 單曲循環
+    REPEAT_ALL,   // 歌單循環
+    PLAY_ONCE     // 只播當前這首一次，播完停止
+}
+
 class MainActivity : ComponentActivity() {
 
     private var songs by mutableStateOf<List<Song>>(emptyList())
@@ -173,16 +179,17 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
         return
     }
 
-    // 主界面与设置页的切换
     var showSettings by remember { mutableStateOf(false) }
-
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
     var currentSong by remember { mutableStateOf<Song?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
-    var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_ALL) }
     var showCreateDialog by remember { mutableStateOf(false) }
 
-    // 背景设置提升到 AppRoot 层，两个页面共享
+    // 新增：三態播放模式
+    var playMode by remember { mutableStateOf(PlayMode.REPEAT_ALL) }
+    // 記錄使用者最近播放的清單，用於切回循環模式時恢復
+    var activeSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+
     var backgroundUri by remember { mutableStateOf<Uri?>(null) }
     var blurRadius by remember { mutableFloatStateOf(12f) }
     val scope = rememberCoroutineScope()
@@ -199,18 +206,80 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
     DisposableEffect(controller) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
-            override fun onRepeatModeChanged(mode: Int) { repeatMode = mode }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 val uri = item?.localConfiguration?.uri?.toString() ?: return
                 currentSong = songs.firstOrNull { it.uriString == uri }
+                    ?: activeSongs.firstOrNull { it.uriString == uri }
             }
         }
         controller.addListener(listener)
         isPlaying = controller.isPlaying
-        repeatMode = controller.repeatMode
         val cur = controller.currentMediaItem?.localConfiguration?.uri?.toString()
         currentSong = cur?.let { u -> songs.firstOrNull { it.uriString == u } }
         onDispose { controller.removeListener(listener) }
+    }
+
+    /** 根據當前 playMode 載入並播放清單中的第 index 首 */
+    fun playFrom(list: List<Song>, index: Int) {
+        if (list.isEmpty() || index !in list.indices) return
+        activeSongs = list
+        val song = list[index]
+
+        when (playMode) {
+            PlayMode.PLAY_ONCE -> {
+                controller.setMediaItem(MediaItem.fromUri(song.uri))
+                controller.repeatMode = Player.REPEAT_MODE_OFF
+                controller.pauseAtEndOfMediaItems = true
+            }
+            PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
+                val items = list.map { MediaItem.fromUri(it.uri) }
+                controller.setMediaItems(items, index, 0L)
+                controller.repeatMode =
+                    if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
+                    else Player.REPEAT_MODE_ALL
+                controller.pauseAtEndOfMediaItems = false
+            }
+        }
+        controller.prepare()
+        controller.play()
+    }
+
+    /** 循環切換三種模式，並保持當前歌曲與進度 */
+    fun cyclePlayMode() {
+        val old = playMode
+        playMode = when (old) {
+            PlayMode.REPEAT_ONE -> PlayMode.REPEAT_ALL
+            PlayMode.REPEAT_ALL -> PlayMode.PLAY_ONCE
+            PlayMode.PLAY_ONCE -> PlayMode.REPEAT_ONE
+        }
+
+        val currentItem = controller.currentMediaItem ?: return
+        val currentPos = controller.currentPosition
+        val currentUri = currentItem.localConfiguration?.uri?.toString()
+
+        when (playMode) {
+            PlayMode.PLAY_ONCE -> {
+                // 把當前這一首設為唯一項，播完即停
+                controller.setMediaItem(currentItem, currentPos)
+                controller.repeatMode = Player.REPEAT_MODE_OFF
+                controller.pauseAtEndOfMediaItems = true
+                controller.prepare()
+            }
+            PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
+                // 從 PLAY_ONCE 返回循環模式時，恢復完整清單
+                if (old == PlayMode.PLAY_ONCE && activeSongs.isNotEmpty()) {
+                    val idx = activeSongs.indexOfFirst { it.uriString == currentUri }
+                        .coerceAtLeast(0)
+                    val items = activeSongs.map { MediaItem.fromUri(it.uri) }
+                    controller.setMediaItems(items, idx, currentPos)
+                    controller.prepare()
+                }
+                controller.repeatMode =
+                    if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
+                    else Player.REPEAT_MODE_ALL
+                controller.pauseAtEndOfMediaItems = false
+            }
+        }
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF0B0B1A))) {
@@ -232,11 +301,13 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
                 playlists = playlists,
                 currentSong = currentSong,
                 isPlaying = isPlaying,
-                repeatMode = repeatMode,
+                playMode = playMode,
                 backgroundUri = backgroundUri,
                 blurRadius = blurRadius,
                 onRequestSongs = onRequestSongs,
                 onCreatePlaylist = { showCreateDialog = true },
+                onPlaySong = { list, idx -> playFrom(list, idx) },
+                onCyclePlayMode = { cyclePlayMode() },
                 onOpenSettings = { showSettings = true }
             )
         }
@@ -263,41 +334,18 @@ fun PlayerScreen(
     playlists: List<Playlist>,
     currentSong: Song?,
     isPlaying: Boolean,
-    repeatMode: Int,
+    playMode: PlayMode,
     backgroundUri: Uri?,
     blurRadius: Float,
     onRequestSongs: () -> Unit,
     onCreatePlaylist: () -> Unit,
+    onPlaySong: (List<Song>, Int) -> Unit,
+    onCyclePlayMode: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     var activeList by remember { mutableStateOf<List<Song>>(emptyList()) }
-    // 时间轴状态
-var positionMs by remember { mutableLongStateOf(0L) }
-var durationMs by remember { mutableLongStateOf(0L) }
-var isDragging by remember { mutableStateOf(false) }
-var dragPosition by remember { mutableFloatStateOf(0f) }
-
-// 每 500ms 更新一次播放进度（拖拽时不覆盖）
-LaunchedEffect(player) {
-    while (true) {
-        if (!isDragging) {
-            positionMs = player.currentPosition.coerceAtLeast(0L)
-            val d = player.duration
-            durationMs = if (d > 0L) d else 0L
-        }
-        delay(500)
-    }
-}
-
-// 切歌时重置拖拽状态
-LaunchedEffect(currentSong) {
-    isDragging = false
-    positionMs = 0L
-    durationMs = 0L
-}
 
     Box(Modifier.fillMaxSize()) {
-        // ---- 背景层 ----
         if (backgroundUri != null) {
             AsyncImage(
                 model = backgroundUri,
@@ -314,9 +362,7 @@ LaunchedEffect(currentSong) {
             )
         }
 
-        // ---- 内容层 ----
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
-            // 顶栏：标题 + 设置按钮
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "TuneMate",
@@ -348,7 +394,7 @@ LaunchedEffect(currentSong) {
                                 .clickable {
                                     if (pl.songs.isNotEmpty()) {
                                         activeList = pl.songs
-                                        playList(player, pl.songs, 0)
+                                        onPlaySong(pl.songs, 0)
                                     }
                                 }
                                 .padding(vertical = 6.dp),
@@ -376,7 +422,7 @@ LaunchedEffect(currentSong) {
                             .clickable {
                                 val list = if (activeList.isEmpty()) songs else activeList
                                 val idx = list.indexOf(song).coerceAtLeast(0)
-                                playList(player, list, idx)
+                                onPlaySong(list, idx)
                             }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -418,40 +464,6 @@ LaunchedEffect(currentSong) {
                 )
             }
 
-            // ---- 时间轴 ----
-Spacer(Modifier.height(4.dp))
-Row(verticalAlignment = Alignment.CenterVertically) {
-    Text(
-        formatTime(if (isDragging) dragPosition.toLong() else positionMs),
-        color = Color.LightGray,
-        style = MaterialTheme.typography.bodySmall,
-        modifier = Modifier.width(44.dp)
-    )
-    Slider(
-        value = if (isDragging) dragPosition
-                else positionMs.toFloat().coerceIn(0f, (if (durationMs > 0) durationMs.toFloat() else 1f)),
-        onValueChange = {
-            isDragging = true
-            dragPosition = it
-        },
-        onValueChangeFinished = {
-            player.seekTo(dragPosition.toLong())
-            positionMs = dragPosition.toLong()
-            isDragging = false
-        },
-        valueRange = 0f..(if (durationMs > 0) durationMs.toFloat() else 1f),
-        enabled = durationMs > 0L,
-        modifier = Modifier.weight(1f).height(32.dp)
-    )
-    Text(
-        formatTime(durationMs),
-        color = Color.LightGray,
-        style = MaterialTheme.typography.bodySmall,
-        modifier = Modifier.width(44.dp)
-    )
-}
-
-            // ---- 播放控制列 ----
             Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -490,30 +502,20 @@ Row(verticalAlignment = Alignment.CenterVertically) {
                     )
                 }
 
-               IconButton(onClick = {
-    player.repeatMode = when (player.repeatMode) {
-        Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
-        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_OFF
-        else -> Player.REPEAT_MODE_ONE
-    }
-}) {
-    Icon(
-        imageVector = when (repeatMode) {
-            Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
-            else -> Icons.Default.Repeat
-        },
-        contentDescription = when (repeatMode) {
-            Player.REPEAT_MODE_ONE -> "單曲循環"
-            Player.REPEAT_MODE_ALL -> "歌單循環"
-            else -> "停止循環"
-        },
-        tint = if (repeatMode == Player.REPEAT_MODE_OFF)
-            Color.Gray
-        else
-            Color(0xFF4FC3F7),
-        modifier = Modifier.size(32.dp)
-    )
-}
+                // 三態循環按鈕：單曲循環 → 歌單循環 → 只播一次 → 單曲循環
+                IconButton(onClick = onCyclePlayMode) {
+                    val (icon, label) = when (playMode) {
+                        PlayMode.REPEAT_ONE -> Icons.Default.RepeatOne to "單曲循環"
+                        PlayMode.REPEAT_ALL -> Icons.Default.Repeat to "歌單循環"
+                        PlayMode.PLAY_ONCE -> Icons.Default.Filter1 to "只播一次"
+                    }
+                    Icon(
+                        icon,
+                        label,
+                        tint = Color(0xFF4FC3F7),
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
         }
     }
@@ -819,14 +821,6 @@ fun CreatePlaylistDialog(
 }
 
 /* ---------------- 播放列表辅助 ---------------- */
-
-private fun playList(player: Player, list: List<Song>, startIndex: Int) {
-    if (list.isEmpty()) return
-    val items = list.map { MediaItem.fromUri(it.uri) }
-    player.setMediaItems(items, startIndex.coerceIn(0, items.lastIndex), 0L)
-    player.prepare()
-    player.play()
-}
 
 private fun formatTime(ms: Long): String {
     if (ms <= 0L) return "0:00"
