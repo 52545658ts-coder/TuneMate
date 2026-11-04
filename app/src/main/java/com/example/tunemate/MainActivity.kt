@@ -27,9 +27,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -225,6 +227,7 @@ fun AppRoot() {
     val songs by songsFlow.collectAsState(initial = emptyList())
     val playlists by playlistsFlow.collectAsState(initial = emptyList())
 
+    // 供 Player.Listener 讀取最新值
     val songsState = rememberUpdatedState(songs)
     val activeSongsState = remember { mutableStateOf<List<Song>>(emptyList()) }
     val playModeState = remember { mutableStateOf(PlayMode.REPEAT_ALL) }
@@ -256,7 +259,7 @@ fun AppRoot() {
     var isDragging by remember { mutableStateOf(false) }
     var dragMs by remember { mutableFloatStateOf(0f) }
 
-    // 同步最新的 songs / activeSongs / playMode 到 state 供 listener 讀取
+    // 同步到 state 供 listener 讀取
     LaunchedEffect(activeSongs) { activeSongsState.value = activeSongs }
     LaunchedEffect(playMode) { playModeState.value = playMode }
 
@@ -280,7 +283,7 @@ fun AppRoot() {
             if (picked.isEmpty()) return@launch
 
             if (playlists.isEmpty()) {
-                // 沒有自訂歌單：直接加入所有歌曲
+                // 沒有自訂歌單：直接加入「所有歌曲」
                 val existing = context.songsFlow().first()
                 val merged = (existing + picked).distinctBy { it.uriString }
                 context.saveSongs(merged)
@@ -648,7 +651,7 @@ private fun PlaylistListContent(
 ) {
     var showAddMenu by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "TuneMate",
@@ -817,7 +820,7 @@ private fun SongListContent(
     onSongClick: (Song) -> Unit,
     onRemove: (Song) -> Unit
 ) {
-    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
@@ -952,6 +955,7 @@ private fun BottomPlayerBar(
         Modifier
             .fillMaxWidth()
             .background(Color(0xFF0B0B1A).copy(alpha = 0.92f))
+            .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         // 正在播放
@@ -1076,7 +1080,11 @@ private fun CreatePlaylistDialog(
                 if (allSongs.isEmpty()) {
                     Text("尚無歌曲，可建立空歌單後再匯入。", color = Color.Gray)
                 } else {
-                    Text("可選歌曲（${selected.size} 首）", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "可選歌曲（${selected.size} 首）",
+                        color = Color.LightGray,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                     LazyColumn(Modifier.heightIn(max = 280.dp)) {
                         items(allSongs) { song ->
                             Row(
@@ -1421,7 +1429,7 @@ private fun EqualizerSettingsPage(onBack: () -> Unit) {
 }
 
 /* ============================================================
- * 工具
+ * 工具：毫秒 → mm:ss
  * ============================================================ */
 private fun formatMs(ms: Long): String {
     if (ms <= 0) return "00:00"
