@@ -8,28 +8,78 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.compose.BackHandler
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.Filter1
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,6 +93,7 @@ import com.example.tunemate.data.backgroundFlow
 import com.example.tunemate.data.playlistsFlow
 import com.example.tunemate.data.queryAudioFiles
 import com.example.tunemate.data.saveBackground
+import com.example.tunemate.data.saveBackgroundImage
 import com.example.tunemate.data.savePlaylists
 import com.example.tunemate.equalizer.EqualizerScreen
 import com.example.tunemate.model.Playlist
@@ -51,20 +102,19 @@ import com.example.tunemate.playback.PlaybackService
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.safeDrawingPadding
-import com.example.tunemate.data.saveBackgroundImage
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.mutableLongStateOf
-import kotlinx.coroutines.delay
 
+/* ============================================================
+ * 播放模式
+ * ============================================================ */
 enum class PlayMode {
     REPEAT_ONE,   // 單曲循環
     REPEAT_ALL,   // 歌單循環
     PLAY_ONCE     // 只播當前這首一次，播完停止
 }
 
+/* ============================================================
+ * Activity
+ * ============================================================ */
 class MainActivity : ComponentActivity() {
 
     private var songs by mutableStateOf<List<Song>>(emptyList())
@@ -78,13 +128,12 @@ class MainActivity : ComponentActivity() {
     ) { /* 忽略 */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
+        super.onCreate(savedInstanceState)
 
-    enableEdgeToEdge(
-        statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-        navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
-    )
-
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -134,8 +183,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/* ---------------- MediaController 连接 ---------------- */
-
+/* ============================================================
+ * MediaController 連接
+ * ============================================================ */
 @Composable
 private fun rememberMediaController(context: Context): MediaController? {
     var controller by remember { mutableStateOf<MediaController?>(null) }
@@ -162,8 +212,9 @@ private fun rememberMediaController(context: Context): MediaController? {
     return controller
 }
 
-/* ---------------- 根 UI ---------------- */
-
+/* ============================================================
+ * 根 UI
+ * ============================================================ */
 @Composable
 fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
     val context = LocalContext.current
@@ -185,9 +236,7 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
     var isPlaying by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
 
-    // 新增：三態播放模式
     var playMode by remember { mutableStateOf(PlayMode.REPEAT_ALL) }
-    // 記錄使用者最近播放的清單，用於切回循環模式時恢復
     var activeSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
 
     var backgroundUri by remember { mutableStateOf<Uri?>(null) }
@@ -204,93 +253,86 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
     }
 
     DisposableEffect(controller) {
-    val listener = object : Player.Listener {
-        override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
-        override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-            val uri = item?.localConfiguration?.uri?.toString() ?: return
-            currentSong = songs.firstOrNull { it.uriString == uri }
-                ?: activeSongs.firstOrNull { it.uriString == uri }
-        }
-        // 新增：歌曲播完後，在「只播一次」模式下確保暫停
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState == Player.STATE_ENDED &&
-                playMode == PlayMode.PLAY_ONCE
-            ) {
-                controller.pause()
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+
+            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                val uri = item?.localConfiguration?.uri?.toString() ?: return
+                currentSong = songs.firstOrNull { it.uriString == uri }
+                    ?: activeSongs.firstOrNull { it.uriString == uri }
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED &&
+                    playMode == PlayMode.PLAY_ONCE
+                ) {
+                    controller.pause()
+                }
             }
         }
-    }
-    controller.addListener(listener)
-    isPlaying = controller.isPlaying
-    val cur = controller.currentMediaItem?.localConfiguration?.uri?.toString()
-    currentSong = cur?.let { u -> songs.firstOrNull { it.uriString == u } }
-    onDispose { controller.removeListener(listener) }
-}
+        controller.addListener(listener)
         isPlaying = controller.isPlaying
         val cur = controller.currentMediaItem?.localConfiguration?.uri?.toString()
         currentSong = cur?.let { u -> songs.firstOrNull { it.uriString == u } }
         onDispose { controller.removeListener(listener) }
     }
 
-    /** 根據當前 playMode 載入並播放清單中的第 index 首 */
     fun playFrom(list: List<Song>, index: Int) {
-    if (list.isEmpty() || index !in list.indices) return
-    activeSongs = list
-    val song = list[index]
+        if (list.isEmpty() || index !in list.indices) return
+        activeSongs = list
+        val song = list[index]
 
-    when (playMode) {
-        PlayMode.PLAY_ONCE -> {
-            // 只播一次：將播放清單設為僅當前這一首
-            controller.setMediaItem(MediaItem.fromUri(song.uri))
-            controller.repeatMode = Player.REPEAT_MODE_OFF
+        when (playMode) {
+            PlayMode.PLAY_ONCE -> {
+                controller.setMediaItem(MediaItem.fromUri(song.uri))
+                controller.repeatMode = Player.REPEAT_MODE_OFF
+            }
+            PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
+                val items = list.map { MediaItem.fromUri(it.uri) }
+                controller.setMediaItems(items, index, 0L)
+                controller.repeatMode =
+                    if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
+                    else Player.REPEAT_MODE_ALL
+            }
         }
-        PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
-            val items = list.map { MediaItem.fromUri(it.uri) }
-            controller.setMediaItems(items, index, 0L)
-            controller.repeatMode =
-                if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
-                else Player.REPEAT_MODE_ALL
-        }
-    }
-    controller.prepare()
-    controller.play()
-}
-
-    /** 循環切換三種模式，並保持當前歌曲與進度 */
-   fun cyclePlayMode() {
-    val old = playMode
-    playMode = when (old) {
-        PlayMode.REPEAT_ONE -> PlayMode.REPEAT_ALL
-        PlayMode.REPEAT_ALL -> PlayMode.PLAY_ONCE
-        PlayMode.PLAY_ONCE -> PlayMode.REPEAT_ONE
+        controller.prepare()
+        controller.play()
     }
 
-    val currentItem = controller.currentMediaItem ?: return
-    val currentPos = controller.currentPosition
-    val currentUri = currentItem.localConfiguration?.uri?.toString()
-
-    when (playMode) {
-        PlayMode.PLAY_ONCE -> {
-            // 只保留當前這一首，播完即停
-            controller.setMediaItem(currentItem, currentPos)
-            controller.repeatMode = Player.REPEAT_MODE_OFF
-            controller.prepare()
+    fun cyclePlayMode() {
+        val old = playMode
+        playMode = when (old) {
+            PlayMode.REPEAT_ONE -> PlayMode.REPEAT_ALL
+            PlayMode.REPEAT_ALL -> PlayMode.PLAY_ONCE
+            PlayMode.PLAY_ONCE -> PlayMode.REPEAT_ONE
         }
-        PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
-            // 從 PLAY_ONCE 返回循環模式時，恢復完整清單
-            if (old == PlayMode.PLAY_ONCE && activeSongs.isNotEmpty()) {
-                val idx = activeSongs.indexOfFirst { it.uriString == currentUri }
-                    .coerceAtLeast(0)
-                val items = activeSongs.map { MediaItem.fromUri(it.uri) }
-                controller.setMediaItems(items, idx, currentPos)
+
+        val currentItem = controller.currentMediaItem ?: return
+        val currentPos = controller.currentPosition
+        val currentUri = currentItem.localConfiguration?.uri?.toString()
+
+        when (playMode) {
+            PlayMode.PLAY_ONCE -> {
+                controller.setMediaItem(currentItem, currentPos)
+                controller.repeatMode = Player.REPEAT_MODE_OFF
                 controller.prepare()
             }
-            controller.repeatMode =
-                if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
-                else Player.REPEAT_MODE_ALL
+            PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
+                if (old == PlayMode.PLAY_ONCE && activeSongs.isNotEmpty()) {
+                    val idx = activeSongs.indexOfFirst { it.uriString == currentUri }
+                        .coerceAtLeast(0)
+                    val items = activeSongs.map { MediaItem.fromUri(it.uri) }
+                    controller.setMediaItems(items, idx, currentPos)
+                    controller.prepare()
+                }
+                controller.repeatMode =
+                    if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
+                    else Player.REPEAT_MODE_ALL
+            }
         }
     }
-}
 
     Box(Modifier.fillMaxSize().background(Color(0xFF0B0B1A))) {
         if (showSettings) {
@@ -335,8 +377,9 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
     }
 }
 
-/* ---------------- 播放器页面 ---------------- */
-
+/* ============================================================
+ * 播放器頁面
+ * ============================================================ */
 @Composable
 fun PlayerScreen(
     player: Player,
@@ -512,7 +555,6 @@ fun PlayerScreen(
                     )
                 }
 
-                // 三態循環按鈕：單曲循環 → 歌單循環 → 只播一次 → 單曲循環
                 IconButton(onClick = onCyclePlayMode) {
                     val (icon, label) = when (playMode) {
                         PlayMode.REPEAT_ONE -> Icons.Default.RepeatOne to "單曲循環"
@@ -531,10 +573,9 @@ fun PlayerScreen(
     }
 }
 
-/* ---------------- 设置页面 ---------------- */
-
-/* ---------------- 设置页面 ---------------- */
-
+/* ============================================================
+ * 設置頁面
+ * ============================================================ */
 private enum class SettingsSubPage { MAIN, BACKGROUND, EQUALIZER }
 
 @Composable
@@ -546,7 +587,6 @@ fun SettingsScreen(
 ) {
     var subPage by remember { mutableStateOf(SettingsSubPage.MAIN) }
 
-    // 子页面返回 → 设置主页；设置主页返回 → 播放器
     BackHandler(enabled = true) {
         if (subPage == SettingsSubPage.MAIN) onBack()
         else subPage = SettingsSubPage.MAIN
@@ -570,8 +610,6 @@ fun SettingsScreen(
     }
 }
 
-/* ---- 设置主页：两个入口 ---- */
-
 @Composable
 private fun SettingsMainPage(
     onOpenBackground: () -> Unit,
@@ -579,12 +617,12 @@ private fun SettingsMainPage(
     onBack: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
-        }
-        Text(
-            "設置",
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+            }
+            Text(
+                "設置",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White
             )
@@ -637,8 +675,6 @@ private fun SettingsEntry(
     HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
 }
 
-/* ---- 子页面：背景设定 ---- */
-
 @Composable
 private fun BackgroundSettingsPage(
     backgroundUri: Uri?,
@@ -667,18 +703,18 @@ private fun BackgroundSettingsPage(
     }
 
     Column(
-    Modifier
-        .fillMaxSize()
-        .safeDrawingPadding()
-        .verticalScroll(rememberScrollState())
-        .padding(16.dp)
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
-        }
-        Text(
-            "背景設定",
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+            }
+            Text(
+                "背景設定",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White
             )
@@ -686,7 +722,7 @@ private fun BackgroundSettingsPage(
 
         Spacer(Modifier.height(24.dp))
 
-                Row {
+        Row {
             Button(
                 enabled = !saving,
                 onClick = {
@@ -695,6 +731,7 @@ private fun BackgroundSettingsPage(
                     )
                 }
             ) { Text(if (saving) "正在儲存…" else "更換背景圖片") }
+
             if (backgroundUri != null) {
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = { onBackgroundChanged(null, pendingBlur) }) {
@@ -740,23 +777,21 @@ private fun BackgroundSettingsPage(
     }
 }
 
-/* ---- 子页面：均衡器 ---- */
-
 @Composable
 private fun EqualizerSettingsPage(onBack: () -> Unit) {
     Column(
-    Modifier
-        .fillMaxSize()
-        .safeDrawingPadding()
-        .verticalScroll(rememberScrollState())
-        .padding(16.dp)
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
-        }
-        Text(
-            "均衡器",
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+            }
+            Text(
+                "均衡器",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White
             )
@@ -765,8 +800,10 @@ private fun EqualizerSettingsPage(onBack: () -> Unit) {
         EqualizerScreen()
     }
 }
-/* ---------------- 创建歌单对话框 ---------------- */
 
+/* ============================================================
+ * 建立歌單對話框
+ * ============================================================ */
 @Composable
 fun CreatePlaylistDialog(
     allSongs: List<Song>,
@@ -828,14 +865,4 @@ fun CreatePlaylistDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
-}
-
-/* ---------------- 播放列表辅助 ---------------- */
-
-private fun formatTime(ms: Long): String {
-    if (ms <= 0L) return "0:00"
-    val totalSec = ms / 1000
-    val min = totalSec / 60
-    val sec = totalSec % 60
-    return "%d:%02d".format(min, sec)
 }
