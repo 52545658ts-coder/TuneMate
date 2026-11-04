@@ -23,7 +23,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -825,7 +824,7 @@ private fun PlaylistListContent(
 }
 
 /* ============================================================
- * 歌單列（主頁，呼吸發光特效）
+ * 歌單列（主頁，呼吸發光特效，無邊框，4 秒一輪）
  * ============================================================ */
 @Composable
 private fun PlaylistRow(
@@ -838,13 +837,13 @@ private fun PlaylistRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    // 呼吸動畫：0f ↔ 1f，1200ms 去 + 1200ms 回 = 2.4 秒一輪
+    // 呼吸動畫：0f ↔ 1f，2000ms 去 + 2000ms 回 = 4 秒一輪
     val infinite = rememberInfiniteTransition(label = "playlistRowBreath")
     val breath by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
+            animation = tween(2000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "playlistRowBreathValue"
@@ -854,7 +853,6 @@ private fun PlaylistRow(
     val shape = RoundedCornerShape(12.dp)
 
     val bgAlpha = if (isPlaying) 0.10f + breath * 0.20f else 0f
-    val borderAlpha = if (isPlaying) 0.45f + breath * 0.55f else 0f
     val iconAlpha = if (isPlaying) 0.65f + breath * 0.35f else 1f
     val subAlpha = if (isPlaying) 0.70f + breath * 0.30f else 1f
 
@@ -863,11 +861,6 @@ private fun PlaylistRow(
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .background(accent.copy(alpha = bgAlpha), shape)
-            .border(
-                width = 1.2.dp,
-                color = accent.copy(alpha = borderAlpha),
-                shape = shape
-            )
             .clip(shape)
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp, horizontal = 10.dp),
@@ -995,7 +988,7 @@ private fun SongListContent(
 }
 
 /* ============================================================
- * 歌曲列（含 ⋮ 選單 + 呼吸發光特效）
+ * 歌曲列（含 ⋮ 選單 + 呼吸發光特效，無邊框，4 秒一輪）
  * ============================================================ */
 @Composable
 private fun SongRow(
@@ -1006,13 +999,13 @@ private fun SongRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    // 呼吸動畫：0f ↔ 1f，1200ms 去 + 1200ms 回 = 2.4 秒一輪
+    // 呼吸動畫：0f ↔ 1f，2000ms 去 + 2000ms 回 = 4 秒一輪
     val infinite = rememberInfiniteTransition(label = "songRowBreath")
     val breath by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
+            animation = tween(2000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "songRowBreathValue"
@@ -1022,7 +1015,6 @@ private fun SongRow(
     val shape = RoundedCornerShape(12.dp)
 
     val bgAlpha = if (isPlaying) 0.10f + breath * 0.20f else 0f
-    val borderAlpha = if (isPlaying) 0.45f + breath * 0.55f else 0f
     val iconAlpha = if (isPlaying) 0.65f + breath * 0.35f else 1f
     val subAlpha = if (isPlaying) 0.70f + breath * 0.30f else 1f
 
@@ -1031,11 +1023,6 @@ private fun SongRow(
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .background(accent.copy(alpha = bgAlpha), shape)
-            .border(
-                width = 1.2.dp,
-                color = accent.copy(alpha = borderAlpha),
-                shape = shape
-            )
             .clip(shape)
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp, horizontal = 10.dp),
