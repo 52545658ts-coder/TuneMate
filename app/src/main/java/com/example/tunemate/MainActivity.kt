@@ -16,13 +16,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -95,6 +96,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -824,7 +827,7 @@ private fun PlaylistListContent(
 }
 
 /* ============================================================
- * 歌單列（主頁，含播放中特效）
+ * 歌單列（主頁，呼吸發光特效）
  * ============================================================ */
 @Composable
 private fun PlaylistRow(
@@ -837,26 +840,41 @@ private fun PlaylistRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    // 播放中的脈衝動畫
-    val infinite = rememberInfiniteTransition(label = "playlistRowPulse")
-    val pulse by infinite.animateFloat(
-        initialValue = 0.55f,
+    // 呼吸動畫：0f ↔ 1f
+    val infinite = rememberInfiniteTransition(label = "playlistRowBreath")
+    val breath by infinite.animateFloat(
+        initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = LinearEasing),
+            animation = tween(1600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "playlistRowPulseAlpha"
+        label = "playlistRowBreathValue"
     )
+
+    val accent = Color(0xFF4FC3F7)
+    val shape = RoundedCornerShape(10.dp)
+
+    val bgAlpha = if (isPlaying) 0.06f + breath * 0.14f else 0f
+    val borderAlpha = if (isPlaying) 0.30f + breath * 0.60f else 0f
+    val glowElevation = if (isPlaying) 2f + breath * 6f else 0f
 
     Row(
         Modifier
             .fillMaxWidth()
-            .background(
-                if (isPlaying) Color(0xFF4FC3F7).copy(alpha = 0.14f)
-                else Color.Transparent,
-                RoundedCornerShape(10.dp)
+            .shadow(
+                elevation = glowElevation.dp,
+                shape = shape,
+                ambientColor = accent.copy(alpha = bgAlpha + 0.15f),
+                spotColor = accent.copy(alpha = bgAlpha + 0.35f)
             )
+            .background(accent.copy(alpha = bgAlpha), shape)
+            .border(
+                width = if (isPlaying) 1.5.dp else 0.dp,
+                color = accent.copy(alpha = borderAlpha),
+                shape = shape
+            )
+            .clip(shape)
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -864,18 +882,17 @@ private fun PlaylistRow(
         Icon(
             if (isPlaying) Icons.Default.PlayArrow else icon,
             contentDescription = null,
-            tint = if (isPlaying) Color(0xFF4FC3F7)
-            else Color(0xFF4FC3F7).copy(alpha = 0.7f),
+            tint = if (isPlaying) accent else accent.copy(alpha = 0.7f),
             modifier = Modifier
                 .size(28.dp)
-                .alpha(if (isPlaying) pulse else 1f)
+                .alpha(if (isPlaying) 0.65f + breath * 0.35f else 1f)
         )
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
-                color = if (isPlaying) Color(0xFF4FC3F7) else Color.White,
+                color = if (isPlaying) accent else Color.White,
                 fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -883,7 +900,7 @@ private fun PlaylistRow(
             Text(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isPlaying) Color(0xFF4FC3F7).copy(alpha = 0.75f)
+                color = if (isPlaying) accent.copy(alpha = 0.60f + breath * 0.30f)
                 else Color.Gray
             )
         }
@@ -986,7 +1003,7 @@ private fun SongListContent(
 }
 
 /* ============================================================
- * 歌曲列（含 ⋮ 選單 + 播放中特效）
+ * 歌曲列（含 ⋮ 選單 + 呼吸發光特效）
  * ============================================================ */
 @Composable
 private fun SongRow(
@@ -997,25 +1014,40 @@ private fun SongRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    val infinite = rememberInfiniteTransition(label = "songRowPulse")
-    val pulse by infinite.animateFloat(
-        initialValue = 0.55f,
+    val infinite = rememberInfiniteTransition(label = "songRowBreath")
+    val breath by infinite.animateFloat(
+        initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = LinearEasing),
+            animation = tween(1600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "songRowPulseAlpha"
+        label = "songRowBreathValue"
     )
+
+    val accent = Color(0xFF4FC3F7)
+    val shape = RoundedCornerShape(10.dp)
+
+    val bgAlpha = if (isPlaying) 0.06f + breath * 0.14f else 0f
+    val borderAlpha = if (isPlaying) 0.30f + breath * 0.60f else 0f
+    val glowElevation = if (isPlaying) 2f + breath * 6f else 0f
 
     Row(
         Modifier
             .fillMaxWidth()
-            .background(
-                if (isPlaying) Color(0xFF4FC3F7).copy(alpha = 0.14f)
-                else Color.Transparent,
-                RoundedCornerShape(10.dp)
+            .shadow(
+                elevation = glowElevation.dp,
+                shape = shape,
+                ambientColor = accent.copy(alpha = bgAlpha + 0.15f),
+                spotColor = accent.copy(alpha = bgAlpha + 0.35f)
             )
+            .background(accent.copy(alpha = bgAlpha), shape)
+            .border(
+                width = if (isPlaying) 1.5.dp else 0.dp,
+                color = accent.copy(alpha = borderAlpha),
+                shape = shape
+            )
+            .clip(shape)
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1023,24 +1055,23 @@ private fun SongRow(
         Icon(
             if (isPlaying) Icons.Default.PlayArrow else Icons.Default.MusicNote,
             contentDescription = null,
-            tint = if (isPlaying) Color(0xFF4FC3F7)
-            else Color(0xFF4FC3F7).copy(alpha = 0.7f),
+            tint = if (isPlaying) accent else accent.copy(alpha = 0.7f),
             modifier = Modifier
                 .size(24.dp)
-                .alpha(if (isPlaying) pulse else 1f)
+                .alpha(if (isPlaying) 0.65f + breath * 0.35f else 1f)
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 song.title,
-                color = if (isPlaying) Color(0xFF4FC3F7) else Color.White,
+                color = if (isPlaying) accent else Color.White,
                 fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 song.artist,
-                color = if (isPlaying) Color(0xFF4FC3F7).copy(alpha = 0.75f)
+                color = if (isPlaying) accent.copy(alpha = 0.60f + breath * 0.30f)
                 else Color.Gray,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
