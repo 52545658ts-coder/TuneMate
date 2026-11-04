@@ -6,6 +6,10 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.tunemate.model.Playlist
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
@@ -45,4 +49,16 @@ fun Context.backgroundFlow(): Flow<BackgroundPrefs> = dataStore.data.map { prefs
         uri = prefs[BG_URI_KEY],
         blur = prefs[BLUR_KEY] ?: 12f
     )
+}
+
+suspend fun Context.saveBackgroundImage(sourceUri: Uri): Uri? = withContext(Dispatchers.IO) {
+    try {
+        val target = File(filesDir, "background.jpg")
+        contentResolver.openInputStream(sourceUri)?.use { input ->
+            target.outputStream().use { output -> input.copyTo(output) }
+        }
+        Uri.fromFile(target)
+    } catch (e: Exception) {
+        null
+    }
 }
