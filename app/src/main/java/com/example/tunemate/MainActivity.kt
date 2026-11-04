@@ -20,6 +20,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -49,6 +51,7 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
@@ -107,6 +110,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
 import com.example.tunemate.data.PlaybackState
+import com.example.tunemate.data.ThemePrefs
 import com.example.tunemate.data.backgroundFlow
 import com.example.tunemate.data.buildSongFromUri
 import com.example.tunemate.data.playbackStateFlow
@@ -116,7 +120,9 @@ import com.example.tunemate.data.saveBackgroundImage
 import com.example.tunemate.data.savePlaybackState
 import com.example.tunemate.data.savePlaylists
 import com.example.tunemate.data.saveSongs
+import com.example.tunemate.data.saveTheme
 import com.example.tunemate.data.songsFlow
+import com.example.tunemate.data.themeFlow
 import com.example.tunemate.equalizer.EqualizerScreen
 import com.example.tunemate.model.Playlist
 import com.example.tunemate.model.Song
@@ -152,6 +158,35 @@ sealed class ViewMode {
 private data class RemoveRequest(
     val song: Song,
     val fromPlaylistName: String?
+)
+
+/* ============================================================
+ * 主題預設色盤
+ * ============================================================ */
+private val PRESET_BG_COLORS = listOf(
+    0xFF0B0B1AL,  // 深藍黑（預設）
+    0xFF000000L,  // 純黑
+    0xFF1A1A2EL,  // 深藍紫
+    0xFF0F3460L,  // 深藍
+    0xFF1E1E1EL,  // 深灰
+    0xFF241B2FL,  // 深紫
+    0xFF0B1A1AL,  // 深青
+    0xFF1A0B0BL,  // 深紅
+    0xFF2D2D2DL,  // 中灰
+    0xFF2A1B0BL   // 深棕
+)
+
+private val PRESET_ACCENT_COLORS = listOf(
+    0xFF4FC3F7L,  // 天藍（預設）
+    0xFF81C784L,  // 綠
+    0xFFFFB74DL,  // 橙
+    0xFFE57373L,  // 紅
+    0xFFBA68C8L,  // 紫
+    0xFF4DD0E1L,  // 青
+    0xFFFFF176L,  // 黃
+    0xFFF06292L,  // 粉
+    0xFFA1887FL,  // 棕
+    0xFF90A4AEL   // 灰藍
 )
 
 /* ============================================================
@@ -230,8 +265,13 @@ fun AppRoot() {
     // 持久化資料
     val songsFlow = remember(context) { context.songsFlow() }
     val playlistsFlow = remember(context) { context.playlistsFlow() }
+    val themeFlow = remember(context) { context.themeFlow() }
     val songs by songsFlow.collectAsState(initial = emptyList())
     val playlists by playlistsFlow.collectAsState(initial = emptyList())
+    val themePrefs by themeFlow.collectAsState(initial = ThemePrefs())
+
+    val accent = Color(themePrefs.accentColor)
+    val bgColor = Color(themePrefs.backgroundColor)
 
     // 供 Player.Listener 讀取最新值
     val songsState = rememberUpdatedState(songs)
@@ -439,10 +479,10 @@ fun AppRoot() {
 
     if (controller == null) {
         Box(
-            Modifier.fillMaxSize().background(Color(0xFF0B0B1A)),
+            Modifier.fillMaxSize().background(bgColor),
             contentAlignment = Alignment.Center
         ) {
-            CircularProgressIndicator(color = Color(0xFF4FC3F7))
+            CircularProgressIndicator(color = accent)
         }
         return
     }
@@ -502,7 +542,7 @@ fun AppRoot() {
     }
 
     // ---------- 主體 ----------
-    Box(Modifier.fillMaxSize().background(Color(0xFF0B0B1A))) {
+    Box(Modifier.fillMaxSize().background(bgColor)) {
         if (showSettings) {
             SettingsScreen(
                 backgroundUri = backgroundUri,
@@ -511,6 +551,11 @@ fun AppRoot() {
                     backgroundUri = uri
                     blurRadius = blur
                     scope.launch { context.saveBackground(uri?.toString(), blur) }
+                },
+                themePrefs = themePrefs,
+                accentColor = accent,
+                onThemeChanged = { bg, ac ->
+                    scope.launch { context.saveTheme(bg, ac) }
                 },
                 onBack = { showSettings = false }
             )
@@ -524,6 +569,7 @@ fun AppRoot() {
                             currentPlayingUri = currentSong?.uriString,
                             currentSourcePlaylist = currentSourcePlaylist,
                             isPlaying = isPlaying,
+                            accentColor = themePrefs.accentColor,
                             onOpenAllSongs = { viewMode = ViewMode.AllSongs },
                             onOpenPlaylist = { pl -> viewMode = ViewMode.Custom(pl.name) },
                             onDeletePlaylist = { pl -> playlistToDelete = pl },
@@ -538,6 +584,7 @@ fun AppRoot() {
                             currentPlayingUri = currentSong?.uriString,
                             isAllSongs = true,
                             isPlaying = isPlaying,
+                            accentColor = themePrefs.accentColor,
                             onBack = { viewMode = ViewMode.Home },
                             onSongClick = { song ->
                                 val idx = songs.indexOf(song).coerceAtLeast(0)
@@ -555,6 +602,7 @@ fun AppRoot() {
                                     currentPlayingUri = currentSong?.uriString,
                                     isAllSongs = false,
                                     isPlaying = isPlaying,
+                                    accentColor = themePrefs.accentColor,
                                     onBack = { viewMode = ViewMode.Home },
                                     onSongClick = { song ->
                                         val idx = pl.songs.indexOf(song).coerceAtLeast(0)
@@ -578,6 +626,8 @@ fun AppRoot() {
                     durationMs = durationMs,
                     isDragging = isDragging,
                     dragMs = dragMs,
+                    backgroundColor = themePrefs.backgroundColor,
+                    accentColor = themePrefs.accentColor,
                     onDragChange = { v ->
                         isDragging = true
                         dragMs = v
@@ -730,6 +780,7 @@ private fun PlaylistListContent(
     currentPlayingUri: String?,
     currentSourcePlaylist: String?,
     isPlaying: Boolean,
+    accentColor: Long,
     onOpenAllSongs: () -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist) -> Unit,
@@ -738,6 +789,7 @@ private fun PlaylistListContent(
     onOpenSettings: () -> Unit
 ) {
     var showAddMenu by remember { mutableStateOf(false) }
+    val accent = Color(accentColor)
 
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -762,7 +814,7 @@ private fun PlaylistListContent(
                             Icon(
                                 Icons.Default.MusicNote,
                                 contentDescription = null,
-                                tint = Color(0xFF4FC3F7)
+                                tint = accent
                             )
                         },
                         onClick = {
@@ -776,7 +828,7 @@ private fun PlaylistListContent(
                             Icon(
                                 Icons.Default.QueueMusic,
                                 contentDescription = null,
-                                tint = Color(0xFF4FC3F7)
+                                tint = accent
                             )
                         },
                         onClick = {
@@ -795,7 +847,6 @@ private fun PlaylistListContent(
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(Modifier.weight(1f)) {
-            // 「所有歌曲」：只有從「所有歌曲」隊列播放時才標記
             item {
                 val isSource = currentPlayingUri != null && currentSourcePlaylist == null
                 PlaylistRow(
@@ -804,12 +855,12 @@ private fun PlaylistListContent(
                     subtitle = "${songs.size} 首",
                     isHighlighted = isSource,
                     isAnimating = isSource && isPlaying,
+                    accentColor = accentColor,
                     onClick = onOpenAllSongs,
                     onDelete = null
                 )
             }
 
-            // 自訂歌單：只有「當前播放來源」的這個歌單才標記
             items(playlists) { pl ->
                 val isSource = currentPlayingUri != null && currentSourcePlaylist == pl.name
                 PlaylistRow(
@@ -818,6 +869,7 @@ private fun PlaylistListContent(
                     subtitle = "${pl.songs.size} 首",
                     isHighlighted = isSource,
                     isAnimating = isSource && isPlaying,
+                    accentColor = accentColor,
                     onClick = { onOpenPlaylist(pl) },
                     onDelete = { onDeletePlaylist(pl) }
                 )
@@ -827,7 +879,7 @@ private fun PlaylistListContent(
 }
 
 /* ============================================================
- * 歌單列（主頁，呼吸發光特效，跟隨播放/暫停）
+ * 歌單列（主頁，呼吸發光特效）
  * ============================================================ */
 @Composable
 private fun PlaylistRow(
@@ -836,12 +888,12 @@ private fun PlaylistRow(
     subtitle: String,
     isHighlighted: Boolean,
     isAnimating: Boolean,
+    accentColor: Long,
     onClick: () -> Unit,
     onDelete: (() -> Unit)?
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    // 使用 while(true) 手動循環，確保從任何起點都能完整呼吸
     val breath = remember { Animatable(0f) }
     LaunchedEffect(isAnimating) {
         if (isAnimating) {
@@ -852,7 +904,7 @@ private fun PlaylistRow(
         }
     }
 
-    val accent = Color(0xFF4FC3F7)
+    val accent = Color(accentColor)
     val shape = RoundedCornerShape(12.dp)
     val b = breath.value
 
@@ -937,6 +989,7 @@ private fun SongListContent(
     currentPlayingUri: String?,
     isAllSongs: Boolean,
     isPlaying: Boolean,
+    accentColor: Long,
     onBack: () -> Unit,
     onSongClick: (Song) -> Unit,
     onRemove: (Song) -> Unit
@@ -985,6 +1038,7 @@ private fun SongListContent(
                         song = song,
                         isHighlighted = isCurrent,
                         isAnimating = isCurrent && isPlaying,
+                        accentColor = accentColor,
                         onClick = { onSongClick(song) },
                         onRemove = { onRemove(song) }
                     )
@@ -995,13 +1049,14 @@ private fun SongListContent(
 }
 
 /* ============================================================
- * 歌曲列（含 ⋮ 選單 + 呼吸發光特效，跟隨播放/暫停）
+ * 歌曲列（含 ⋮ 選單 + 呼吸發光特效）
  * ============================================================ */
 @Composable
 private fun SongRow(
     song: Song,
     isHighlighted: Boolean,
     isAnimating: Boolean,
+    accentColor: Long,
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -1017,7 +1072,7 @@ private fun SongRow(
         }
     }
 
-    val accent = Color(0xFF4FC3F7)
+    val accent = Color(accentColor)
     val shape = RoundedCornerShape(12.dp)
     val b = breath.value
 
@@ -1098,14 +1153,17 @@ private fun BottomPlayerBar(
     durationMs: Long,
     isDragging: Boolean,
     dragMs: Float,
+    backgroundColor: Long,
+    accentColor: Long,
     onDragChange: (Float) -> Unit,
     onDragFinish: () -> Unit,
     onCyclePlayMode: () -> Unit
 ) {
+    val accent = Color(accentColor)
     Column(
         Modifier
             .fillMaxWidth()
-            .background(Color(0xFF0B0B1A).copy(alpha = 0.92f))
+            .background(Color(backgroundColor).copy(alpha = 0.92f))
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
@@ -1189,8 +1247,7 @@ private fun BottomPlayerBar(
                     PlayMode.REPEAT_ALL -> Icons.Default.Repeat to "歌單循環"
                     PlayMode.PLAY_ONCE -> Icons.Default.Repeat to "只播一次"
                 }
-                val tint = if (playMode == PlayMode.PLAY_ONCE) Color.Gray
-                else Color(0xFF4FC3F7)
+                val tint = if (playMode == PlayMode.PLAY_ONCE) Color.Gray else accent
                 Icon(
                     icon,
                     label,
@@ -1353,13 +1410,16 @@ private fun ImportToPlaylistDialog(
 /* ============================================================
  * 設置
  * ============================================================ */
-private enum class SettingsSubPage { MAIN, BACKGROUND, EQUALIZER }
+private enum class SettingsSubPage { MAIN, BACKGROUND, THEME, EQUALIZER }
 
 @Composable
 fun SettingsScreen(
     backgroundUri: Uri?,
     blurRadius: Float,
     onBackgroundChanged: (Uri?, Float) -> Unit,
+    themePrefs: ThemePrefs,
+    accentColor: Color,
+    onThemeChanged: (Long, Long) -> Unit,
     onBack: () -> Unit
 ) {
     var subPage by remember { mutableStateOf(SettingsSubPage.MAIN) }
@@ -1371,7 +1431,9 @@ fun SettingsScreen(
 
     when (subPage) {
         SettingsSubPage.MAIN -> SettingsMainPage(
+            accentColor = accentColor,
             onOpenBackground = { subPage = SettingsSubPage.BACKGROUND },
+            onOpenTheme = { subPage = SettingsSubPage.THEME },
             onOpenEqualizer = { subPage = SettingsSubPage.EQUALIZER },
             onBack = onBack
         )
@@ -1379,6 +1441,12 @@ fun SettingsScreen(
             backgroundUri = backgroundUri,
             blurRadius = blurRadius,
             onBackgroundChanged = onBackgroundChanged,
+            onBack = { subPage = SettingsSubPage.MAIN }
+        )
+        SettingsSubPage.THEME -> ThemeSettingsPage(
+            themePrefs = themePrefs,
+            accentColor = accentColor,
+            onThemeChanged = onThemeChanged,
             onBack = { subPage = SettingsSubPage.MAIN }
         )
         SettingsSubPage.EQUALIZER -> EqualizerSettingsPage(
@@ -1389,7 +1457,9 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingsMainPage(
+    accentColor: Color,
     onOpenBackground: () -> Unit,
+    onOpenTheme: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -1411,12 +1481,21 @@ private fun SettingsMainPage(
             icon = Icons.Default.Image,
             title = "背景設定",
             subtitle = "更換背景圖片、調整模糊度",
+            accentColor = accentColor,
             onClick = onOpenBackground
+        )
+        SettingsEntry(
+            icon = Icons.Default.Palette,
+            title = "主題",
+            subtitle = "設定預設背景顏色和特效顏色",
+            accentColor = accentColor,
+            onClick = onOpenTheme
         )
         SettingsEntry(
             icon = Icons.Default.Equalizer,
             title = "均衡器",
             subtitle = "調整低音、中音、高音",
+            accentColor = accentColor,
             onClick = onOpenEqualizer
         )
     }
@@ -1427,6 +1506,7 @@ private fun SettingsEntry(
     icon: ImageVector,
     title: String,
     subtitle: String,
+    accentColor: Color,
     onClick: () -> Unit
 ) {
     Row(
@@ -1439,7 +1519,7 @@ private fun SettingsEntry(
         Icon(
             icon,
             contentDescription = null,
-            tint = Color(0xFF4FC3F7),
+            tint = accentColor,
             modifier = Modifier.size(28.dp)
         )
         Spacer(Modifier.width(16.dp))
@@ -1550,6 +1630,163 @@ private fun BackgroundSettingsPage(
             } else {
                 Text("使用預設漸層背景", color = Color.Gray)
             }
+        }
+    }
+}
+
+@Composable
+private fun ThemeSettingsPage(
+    themePrefs: ThemePrefs,
+    accentColor: Color,
+    onThemeChanged: (Long, Long) -> Unit,
+    onBack: () -> Unit
+) {
+    var selectedBg by remember(themePrefs.backgroundColor) {
+        mutableLongStateOf(themePrefs.backgroundColor)
+    }
+    var selectedAccent by remember(themePrefs.accentColor) {
+        mutableLongStateOf(themePrefs.accentColor)
+    }
+
+    // 使用者一改就即時保存
+    LaunchedEffect(selectedBg, selectedAccent) {
+        if (selectedBg != themePrefs.backgroundColor ||
+            selectedAccent != themePrefs.accentColor
+        ) {
+            onThemeChanged(selectedBg, selectedAccent)
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+            }
+            Text(
+                "主題",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White
+            )
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // 預設背景顏色
+        Text("預設背景顏色", color = Color.White, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
+        ColorRow(
+            colors = PRESET_BG_COLORS.take(5),
+            selected = selectedBg,
+            onSelect = { selectedBg = it }
+        )
+        Spacer(Modifier.height(8.dp))
+        ColorRow(
+            colors = PRESET_BG_COLORS.drop(5),
+            selected = selectedBg,
+            onSelect = { selectedBg = it }
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        // 呼吸發光特效顏色
+        Text("呼吸發光特效顏色", color = Color.White, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
+        ColorRow(
+            colors = PRESET_ACCENT_COLORS.take(5),
+            selected = selectedAccent,
+            onSelect = { selectedAccent = it }
+        )
+        Spacer(Modifier.height(8.dp))
+        ColorRow(
+            colors = PRESET_ACCENT_COLORS.drop(5),
+            selected = selectedAccent,
+            onSelect = { selectedAccent = it }
+        )
+
+        Spacer(Modifier.height(28.dp))
+
+        // 即時預覽
+        Text("預覽", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(140.dp)
+                .background(Color(selectedBg), RoundedCornerShape(12.dp))
+        ) {
+            val previewAccent = Color(selectedAccent)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .background(
+                        previewAccent.copy(alpha = 0.20f),
+                        RoundedCornerShape(12.dp)
+                    )
+                    .padding(vertical = 12.dp, horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = previewAccent,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "正在播放的歌曲",
+                        color = previewAccent,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "演出者",
+                        color = previewAccent.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "提示：預設背景僅在未設定背景圖片時顯示。",
+            color = Color.Gray,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+@Composable
+private fun ColorRow(
+    colors: List<Long>,
+    selected: Long,
+    onSelect: (Long) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        colors.forEach { c ->
+            Box(
+                Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(Color(c))
+                    .border(
+                        width = if (c == selected) 3.dp else 1.dp,
+                        color = if (c == selected) Color.White
+                        else Color.White.copy(alpha = 0.3f),
+                        shape = CircleShape
+                    )
+                    .clickable { onSelect(c) }
+            )
         }
     }
 }
