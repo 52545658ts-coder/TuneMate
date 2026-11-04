@@ -54,7 +54,6 @@ class PlaybackService : MediaSessionService() {
     private fun releaseEqualizer() {
         equalizer?.let {
             EqualizerHolder.detach(it)
-            // 先關閉再釋放，避免部分裝置出現短暫爆音
             runCatching { it.enabled = false }
             runCatching { it.release() }
         }
@@ -75,10 +74,18 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
+    /**
+     * 使用者把 App 從最近任務中劃掉時，完全停止：
+     *  - 停止播放（不保留位置）
+     *  - 清除前台通知（透過 pauseAllPlayersAndStopSelf）
+     *  - 停止 service 本身，讓系統可以回收進程
+     *
+     * 注意：播放狀態已由 UI 層（MainActivity）定期寫入 DataStore，
+     * 這裡不需要再持久化。
+     */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
-        if (player == null || !player.isPlaying) {
-            pauseAllPlayersAndStopSelf()
-        }
+        player?.stop()
+        pauseAllPlayersAndStopSelf()
     }
 }
