@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.tunemate.model.Playlist
@@ -23,14 +24,14 @@ private val SONGS_KEY = stringPreferencesKey("imported_songs")
 private val BG_URI_KEY = stringPreferencesKey("background_uri")
 private val BLUR_KEY = floatPreferencesKey("background_blur")
 
+private val PB_SONG_URI = stringPreferencesKey("pb_song_uri")
+private val PB_PLAYLIST = stringPreferencesKey("pb_playlist")
+private val PB_POSITION = longPreferencesKey("pb_position")
+private val PB_PLAY_MODE = stringPreferencesKey("pb_play_mode")
+
 private val json = Json { ignoreUnknownKeys = true }
 
 // ---------- 已匯入歌曲 ----------
-/**
- * 回傳使用者「手動匯入」的歌曲列表。
- * 與舊版自動掃描 MediaStore 不同，這裡只包含使用者透過系統檔案選擇器
- * 明確挑選過的音頻。
- */
 fun Context.songsFlow(): Flow<List<Song>> = dataStore.data.map { prefs ->
     prefs[SONGS_KEY]?.let {
         runCatching { json.decodeFromString<List<Song>>(it) }.getOrDefault(emptyList())
@@ -78,5 +79,47 @@ suspend fun Context.saveBackgroundImage(sourceUri: Uri): Uri? = withContext(Disp
         Uri.fromFile(target)
     } catch (e: Exception) {
         null
+    }
+}
+
+// ---------- 播放狀態 ----------
+/**
+ * 上次離開 App 時的播放狀態：
+ *  - songUri      正在播放的歌曲 URI
+ *  - playlistName 所屬歌單（null 表示來自「所有歌曲」）
+ *  - positionMs   播放位置（毫秒）
+ *  - playMode     播放模式（REPEAT_ONE / REPEAT_ALL / PLAY_ONCE 的字串）
+ */
+data class PlaybackState(
+    val songUri: String? = null,
+    val playlistName: String? = null,
+    val positionMs: Long = 0L,
+    val playMode: String? = null
+)
+
+fun Context.playbackStateFlow(): Flow<PlaybackState> = dataStore.data.map { prefs ->
+    PlaybackState(
+        songUri = prefs[PB_SONG_URI],
+        playlistName = prefs[PB_PLAYLIST],
+        positionMs = prefs[PB_POSITION] ?: 0L,
+        playMode = prefs[PB_PLAY_MODE]
+    )
+}
+
+suspend fun Context.savePlaybackState(state: PlaybackState) {
+    dataStore.edit { prefs ->
+        state.songUri?.let { prefs[PB_SONG_URI] = it } ?: prefs.remove(PB_SONG_URI)
+        state.playlistName?.let { prefs[PB_PLAYLIST] = it } ?: prefs.remove(PB_PLAYLIST)
+        prefs[PB_POSITION] = state.positionMs
+        state.playMode?.let { prefs[PB_PLAY_MODE] = it } ?: prefs.remove(PB_PLAY_MODE)
+    }
+}
+
+suspend fun Context.clearPlaybackState() {
+    dataStore.edit { prefs ->
+        prefs.remove(PB_SONG_URI)
+        prefs.remove(PB_PLAYLIST)
+        prefs.remove(PB_POSITION)
+        prefs.remove(PB_PLAY_MODE)
     }
 }
