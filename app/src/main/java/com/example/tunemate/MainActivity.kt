@@ -10,6 +10,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -441,8 +443,114 @@ fun PlayerScreen(
 
 /* ---------------- 设置页面 ---------------- */
 
+/* ---------------- 设置页面 ---------------- */
+
+private enum class SettingsSubPage { MAIN, BACKGROUND, EQUALIZER }
+
 @Composable
 fun SettingsScreen(
+    backgroundUri: Uri?,
+    blurRadius: Float,
+    onBackgroundChanged: (Uri?, Float) -> Unit,
+    onBack: () -> Unit
+) {
+    var subPage by remember { mutableStateOf(SettingsSubPage.MAIN) }
+
+    // 子页面返回 → 设置主页；设置主页返回 → 播放器
+    BackHandler(enabled = true) {
+        if (subPage == SettingsSubPage.MAIN) onBack()
+        else subPage = SettingsSubPage.MAIN
+    }
+
+    when (subPage) {
+        SettingsSubPage.MAIN -> SettingsMainPage(
+            onOpenBackground = { subPage = SettingsSubPage.BACKGROUND },
+            onOpenEqualizer = { subPage = SettingsSubPage.EQUALIZER },
+            onBack = onBack
+        )
+        SettingsSubPage.BACKGROUND -> BackgroundSettingsPage(
+            backgroundUri = backgroundUri,
+            blurRadius = blurRadius,
+            onBackgroundChanged = onBackgroundChanged,
+            onBack = { subPage = SettingsSubPage.MAIN }
+        )
+        SettingsSubPage.EQUALIZER -> EqualizerSettingsPage(
+            onBack = { subPage = SettingsSubPage.MAIN }
+        )
+    }
+}
+
+/* ---- 设置主页：两个入口 ---- */
+
+@Composable
+private fun SettingsMainPage(
+    onOpenBackground: () -> Unit,
+    onOpenEqualizer: () -> Unit,
+    onBack: () -> Unit
+) {
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+            }
+            Text(
+                "設置",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        SettingsEntry(
+            icon = Icons.Default.Image,
+            title = "背景設定",
+            subtitle = "更換背景圖片、調整模糊度",
+            onClick = onOpenBackground
+        )
+        SettingsEntry(
+            icon = Icons.Default.Equalizer,
+            title = "均衡器",
+            subtitle = "調整低音、中音、高音",
+            onClick = onOpenEqualizer
+        )
+    }
+}
+
+@Composable
+private fun SettingsEntry(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = Color(0xFF4FC3F7),
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+        }
+        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+    }
+    HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
+}
+
+/* ---- 子页面：背景设定 ---- */
+
+@Composable
+private fun BackgroundSettingsPage(
     backgroundUri: Uri?,
     blurRadius: Float,
     onBackgroundChanged: (Uri?, Float) -> Unit,
@@ -464,27 +572,18 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // 顶栏：返回 + 标题
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
             }
             Text(
-                "設置",
+                "背景設定",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White
             )
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // === 背景设定 ===
-        Text(
-            "背景",
-            style = MaterialTheme.typography.titleLarge,
-            color = Color(0xFF4FC3F7)
-        )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(24.dp))
 
         Row {
             Button(onClick = {
@@ -495,12 +594,13 @@ fun SettingsScreen(
             if (backgroundUri != null) {
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = { onBackgroundChanged(null, pendingBlur) }) {
-                    Text("清除")
+                    Text("清除背景")
                 }
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(24.dp))
+
         Text("背景模糊 ${pendingBlur.toInt()} dp", color = Color.White)
         Slider(
             value = pendingBlur,
@@ -512,14 +612,54 @@ fun SettingsScreen(
         )
 
         Spacer(Modifier.height(24.dp))
-        HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
-        Spacer(Modifier.height(16.dp))
 
-        // === 均衡器 ===
-        EqualizerScreen()
+        Text("預覽", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .background(Color(0xFF1A1A2E)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (backgroundUri != null) {
+                AsyncImage(
+                    model = backgroundUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().blur(pendingBlur.dp)
+                )
+            } else {
+                Text("使用預設漸層背景", color = Color.Gray)
+            }
+        }
     }
 }
 
+/* ---- 子页面：均衡器 ---- */
+
+@Composable
+private fun EqualizerSettingsPage(onBack: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+            }
+            Text(
+                "均衡器",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        EqualizerScreen()
+    }
+}
 /* ---------------- 创建歌单对话框 ---------------- */
 
 @Composable
