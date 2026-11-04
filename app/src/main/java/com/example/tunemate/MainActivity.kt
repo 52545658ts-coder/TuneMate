@@ -51,6 +51,9 @@ import com.example.tunemate.playback.PlaybackService
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.safeDrawingPadding
 
 class MainActivity : ComponentActivity() {
 
@@ -65,7 +68,13 @@ class MainActivity : ComponentActivity() {
     ) { /* 忽略 */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    super.onCreate(savedInstanceState)
+
+    enableEdgeToEdge(
+        statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+    )
+
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
