@@ -17,6 +17,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -40,10 +42,10 @@ import com.example.tunemate.data.playlistsFlow
 import com.example.tunemate.data.queryAudioFiles
 import com.example.tunemate.data.saveBackground
 import com.example.tunemate.data.savePlaylists
+import com.example.tunemate.equalizer.EqualizerScreen
 import com.example.tunemate.model.Playlist
 import com.example.tunemate.model.Song
 import com.example.tunemate.playback.PlaybackService
-import com.example.tunemate.equalizer.EqualizerScreen
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -58,7 +60,7 @@ class MainActivity : ComponentActivity() {
 
     private val notifPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* 忽略结果，通知被拒绝时服务仍可运行 */ }
+    ) { /* 忽略 */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -156,76 +158,72 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
         return
     }
 
-    var tab by remember { mutableIntStateOf(0) }
+    // 主界面与设置页的切换
+    var showSettings by remember { mutableStateOf(false) }
+
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
     var currentSong by remember { mutableStateOf<Song?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_ALL) }
     var showCreateDialog by remember { mutableStateOf(false) }
+
+    // 背景设置提升到 AppRoot 层，两个页面共享
+    var backgroundUri by remember { mutableStateOf<Uri?>(null) }
+    var blurRadius by remember { mutableFloatStateOf(12f) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         context.playlistsFlow().collect { playlists = it }
     }
+    LaunchedEffect(Unit) {
+        val prefs = context.backgroundFlow().first()
+        backgroundUri = prefs.uri?.let { Uri.parse(it) }
+        blurRadius = prefs.blur
+    }
 
     DisposableEffect(controller) {
         val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) {
-                isPlaying = playing
-            }
-
-            override fun onRepeatModeChanged(mode: Int) {
-                repeatMode = mode
-            }
-
+            override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+            override fun onRepeatModeChanged(mode: Int) { repeatMode = mode }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 val uri = item?.localConfiguration?.uri?.toString() ?: return
                 currentSong = songs.firstOrNull { it.uriString == uri }
             }
         }
         controller.addListener(listener)
-        // 初次同步状态
         isPlaying = controller.isPlaying
         repeatMode = controller.repeatMode
         val cur = controller.currentMediaItem?.localConfiguration?.uri?.toString()
         currentSong = cur?.let { u -> songs.firstOrNull { it.uriString == u } }
-
         onDispose { controller.removeListener(listener) }
     }
 
-    Scaffold(
-        containerColor = Color(0xFF0B0B1A),
-        bottomBar = {
-            NavigationBar(containerColor = Color(0xFF1A1A2E)) {
-                NavigationBarItem(
-                    selected = tab == 0,
-                    onClick = { tab = 0 },
-                    icon = { Icon(Icons.Default.MusicNote, contentDescription = null) },
-                    label = { Text("播放器") }
-                )
-                NavigationBarItem(
-    selected = tab == 1,
-    onClick = { tab = 1 },
-    icon = { Icon(Icons.Default.Equalizer, contentDescription = null) },
-    label = { Text("均衡器") }
-)
-            }
-        }
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
-            when (tab) {
-                0 -> PlayerScreen(
-                    player = controller,
-                    songs = songs,
-                    playlists = playlists,
-                    currentSong = currentSong,
-                    isPlaying = isPlaying,
-                    repeatMode = repeatMode,
-                    onRequestSongs = onRequestSongs,
-                    onCreatePlaylist = { showCreateDialog = true }
-                )
-                1 -> EqualizerScreen()
-            }
+    Box(Modifier.fillMaxSize().background(Color(0xFF0B0B1A))) {
+        if (showSettings) {
+            SettingsScreen(
+                backgroundUri = backgroundUri,
+                blurRadius = blurRadius,
+                onBackgroundChanged = { uri, blur ->
+                    backgroundUri = uri
+                    blurRadius = blur
+                    scope.launch { context.saveBackground(uri?.toString(), blur) }
+                },
+                onBack = { showSettings = false }
+            )
+        } else {
+            PlayerScreen(
+                player = controller,
+                songs = songs,
+                playlists = playlists,
+                currentSong = currentSong,
+                isPlaying = isPlaying,
+                repeatMode = repeatMode,
+                backgroundUri = backgroundUri,
+                blurRadius = blurRadius,
+                onRequestSongs = onRequestSongs,
+                onCreatePlaylist = { showCreateDialog = true },
+                onOpenSettings = { showSettings = true }
+            )
         }
     }
 
@@ -251,36 +249,13 @@ fun PlayerScreen(
     currentSong: Song?,
     isPlaying: Boolean,
     repeatMode: Int,
+    backgroundUri: Uri?,
+    blurRadius: Float,
     onRequestSongs: () -> Unit,
-    onCreatePlaylist: () -> Unit
+    onCreatePlaylist: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    var backgroundUri by remember { mutableStateOf<Uri?>(null) }
-    var blurRadius by remember { mutableFloatStateOf(12f) }
-    var pendingBlur by remember { mutableFloatStateOf(12f) }
-    var showBgSlider by remember { mutableStateOf(false) }
     var activeList by remember { mutableStateOf<List<Song>>(emptyList()) }
-
-    // 从 DataStore 恢复背景设置
-    LaunchedEffect(Unit) {
-        val prefs = context.backgroundFlow().first()
-        backgroundUri = prefs.uri?.let { Uri.parse(it) }
-        blurRadius = prefs.blur
-        pendingBlur = prefs.blur
-    }
-
-    val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            backgroundUri = uri
-            scope.launch {
-                context.saveBackground(uri.toString(), blurRadius)
-            }
-        }
-    }
 
     Box(Modifier.fillMaxSize()) {
         // ---- 背景层 ----
@@ -291,9 +266,7 @@ fun PlayerScreen(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().blur(blurRadius.dp)
             )
-            Box(
-                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f))
-            )
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)))
         } else {
             Box(
                 Modifier.fillMaxSize().background(
@@ -304,6 +277,7 @@ fun PlayerScreen(
 
         // ---- 内容层 ----
         Column(Modifier.fillMaxSize().padding(16.dp)) {
+            // 顶栏：标题 + 设置按钮
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "TuneMate",
@@ -311,32 +285,12 @@ fun PlayerScreen(
                     color = Color.White
                 )
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = {
-                    imagePicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                }) {
-                    Icon(Icons.Default.Image, "选择背景", tint = Color.White)
-                }
-                IconButton(onClick = { showBgSlider = !showBgSlider }) {
-                    Icon(Icons.Default.Tune, "背景模糊", tint = Color.White)
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Default.Settings, "設置", tint = Color.White)
                 }
             }
 
-            if (showBgSlider) {
-                Text("背景模糊 ${pendingBlur.toInt()} dp", color = Color.White)
-                Slider(
-                    value = pendingBlur,
-                    onValueChange = { pendingBlur = it },
-                    onValueChangeFinished = {
-                        blurRadius = pendingBlur
-                        scope.launch {
-                            context.saveBackground(backgroundUri?.toString(), pendingBlur)
-                        }
-                    },
-                    valueRange = 0f..25f
-                )
-            }
+            Spacer(Modifier.height(8.dp))
 
             Row {
                 Button(onClick = onRequestSongs) { Text("匯入音頻") }
@@ -431,7 +385,6 @@ fun PlayerScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 上一首
                 IconButton(onClick = {
                     if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
                 }) {
@@ -443,19 +396,17 @@ fun PlayerScreen(
                     )
                 }
 
-                // 暂停/继续
                 IconButton(onClick = {
                     if (player.isPlaying) player.pause() else player.play()
                 }) {
                     Icon(
                         if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        "播放/暂停",
+                        "播放/暫停",
                         tint = Color.White,
                         modifier = Modifier.size(52.dp)
                     )
                 }
 
-                // 下一首
                 IconButton(onClick = {
                     if (player.hasNextMediaItem()) player.seekToNextMediaItem()
                 }) {
@@ -467,7 +418,6 @@ fun PlayerScreen(
                     )
                 }
 
-                // 循环模式切换
                 IconButton(onClick = {
                     player.repeatMode = if (player.repeatMode == Player.REPEAT_MODE_ONE)
                         Player.REPEAT_MODE_ALL
@@ -479,13 +429,94 @@ fun PlayerScreen(
                             Icons.Default.RepeatOne
                         else
                             Icons.Default.Repeat,
-                        if (repeatMode == Player.REPEAT_MODE_ONE) "单曲循环" else "歌单循环",
+                        if (repeatMode == Player.REPEAT_MODE_ONE) "單曲循環" else "歌單循環",
                         tint = Color(0xFF4FC3F7),
                         modifier = Modifier.size(32.dp)
                     )
                 }
             }
         }
+    }
+}
+
+/* ---------------- 设置页面 ---------------- */
+
+@Composable
+fun SettingsScreen(
+    backgroundUri: Uri?,
+    blurRadius: Float,
+    onBackgroundChanged: (Uri?, Float) -> Unit,
+    onBack: () -> Unit
+) {
+    var pendingBlur by remember(blurRadius) { mutableFloatStateOf(blurRadius) }
+
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            onBackgroundChanged(uri, pendingBlur)
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        // 顶栏：返回 + 标题
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+            }
+            Text(
+                "設置",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // === 背景设定 ===
+        Text(
+            "背景",
+            style = MaterialTheme.typography.titleLarge,
+            color = Color(0xFF4FC3F7)
+        )
+        Spacer(Modifier.height(8.dp))
+
+        Row {
+            Button(onClick = {
+                imagePicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            }) { Text("更換背景圖片") }
+            if (backgroundUri != null) {
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(onClick = { onBackgroundChanged(null, pendingBlur) }) {
+                    Text("清除")
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text("背景模糊 ${pendingBlur.toInt()} dp", color = Color.White)
+        Slider(
+            value = pendingBlur,
+            onValueChange = { pendingBlur = it },
+            onValueChangeFinished = {
+                onBackgroundChanged(backgroundUri, pendingBlur)
+            },
+            valueRange = 0f..25f
+        )
+
+        Spacer(Modifier.height(24.dp))
+        HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+        Spacer(Modifier.height(16.dp))
+
+        // === 均衡器 ===
+        EqualizerScreen()
     }
 }
 
