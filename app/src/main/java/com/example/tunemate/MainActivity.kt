@@ -204,15 +204,28 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
     }
 
     DisposableEffect(controller) {
-        val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
-            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                val uri = item?.localConfiguration?.uri?.toString() ?: return
-                currentSong = songs.firstOrNull { it.uriString == uri }
-                    ?: activeSongs.firstOrNull { it.uriString == uri }
+    val listener = object : Player.Listener {
+        override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+        override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+            val uri = item?.localConfiguration?.uri?.toString() ?: return
+            currentSong = songs.firstOrNull { it.uriString == uri }
+                ?: activeSongs.firstOrNull { it.uriString == uri }
+        }
+        // 新增：歌曲播完後，在「只播一次」模式下確保暫停
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED &&
+                playMode == PlayMode.PLAY_ONCE
+            ) {
+                controller.pause()
             }
         }
-        controller.addListener(listener)
+    }
+    controller.addListener(listener)
+    isPlaying = controller.isPlaying
+    val cur = controller.currentMediaItem?.localConfiguration?.uri?.toString()
+    currentSong = cur?.let { u -> songs.firstOrNull { it.uriString == u } }
+    onDispose { controller.removeListener(listener) }
+}
         isPlaying = controller.isPlaying
         val cur = controller.currentMediaItem?.localConfiguration?.uri?.toString()
         currentSong = cur?.let { u -> songs.firstOrNull { it.uriString == u } }
@@ -221,66 +234,63 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
 
     /** 根據當前 playMode 載入並播放清單中的第 index 首 */
     fun playFrom(list: List<Song>, index: Int) {
-        if (list.isEmpty() || index !in list.indices) return
-        activeSongs = list
-        val song = list[index]
+    if (list.isEmpty() || index !in list.indices) return
+    activeSongs = list
+    val song = list[index]
 
-        when (playMode) {
-            PlayMode.PLAY_ONCE -> {
-                controller.setMediaItem(MediaItem.fromUri(song.uri))
-                controller.repeatMode = Player.REPEAT_MODE_OFF
-                controller.pauseAtEndOfMediaItems = true
-            }
-            PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
-                val items = list.map { MediaItem.fromUri(it.uri) }
-                controller.setMediaItems(items, index, 0L)
-                controller.repeatMode =
-                    if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
-                    else Player.REPEAT_MODE_ALL
-                controller.pauseAtEndOfMediaItems = false
-            }
+    when (playMode) {
+        PlayMode.PLAY_ONCE -> {
+            // 只播一次：將播放清單設為僅當前這一首
+            controller.setMediaItem(MediaItem.fromUri(song.uri))
+            controller.repeatMode = Player.REPEAT_MODE_OFF
         }
-        controller.prepare()
-        controller.play()
+        PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
+            val items = list.map { MediaItem.fromUri(it.uri) }
+            controller.setMediaItems(items, index, 0L)
+            controller.repeatMode =
+                if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
+                else Player.REPEAT_MODE_ALL
+        }
     }
+    controller.prepare()
+    controller.play()
+}
 
     /** 循環切換三種模式，並保持當前歌曲與進度 */
-    fun cyclePlayMode() {
-        val old = playMode
-        playMode = when (old) {
-            PlayMode.REPEAT_ONE -> PlayMode.REPEAT_ALL
-            PlayMode.REPEAT_ALL -> PlayMode.PLAY_ONCE
-            PlayMode.PLAY_ONCE -> PlayMode.REPEAT_ONE
+   fun cyclePlayMode() {
+    val old = playMode
+    playMode = when (old) {
+        PlayMode.REPEAT_ONE -> PlayMode.REPEAT_ALL
+        PlayMode.REPEAT_ALL -> PlayMode.PLAY_ONCE
+        PlayMode.PLAY_ONCE -> PlayMode.REPEAT_ONE
+    }
+
+    val currentItem = controller.currentMediaItem ?: return
+    val currentPos = controller.currentPosition
+    val currentUri = currentItem.localConfiguration?.uri?.toString()
+
+    when (playMode) {
+        PlayMode.PLAY_ONCE -> {
+            // 只保留當前這一首，播完即停
+            controller.setMediaItem(currentItem, currentPos)
+            controller.repeatMode = Player.REPEAT_MODE_OFF
+            controller.prepare()
         }
-
-        val currentItem = controller.currentMediaItem ?: return
-        val currentPos = controller.currentPosition
-        val currentUri = currentItem.localConfiguration?.uri?.toString()
-
-        when (playMode) {
-            PlayMode.PLAY_ONCE -> {
-                // 把當前這一首設為唯一項，播完即停
-                controller.setMediaItem(currentItem, currentPos)
-                controller.repeatMode = Player.REPEAT_MODE_OFF
-                controller.pauseAtEndOfMediaItems = true
+        PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
+            // 從 PLAY_ONCE 返回循環模式時，恢復完整清單
+            if (old == PlayMode.PLAY_ONCE && activeSongs.isNotEmpty()) {
+                val idx = activeSongs.indexOfFirst { it.uriString == currentUri }
+                    .coerceAtLeast(0)
+                val items = activeSongs.map { MediaItem.fromUri(it.uri) }
+                controller.setMediaItems(items, idx, currentPos)
                 controller.prepare()
             }
-            PlayMode.REPEAT_ONE, PlayMode.REPEAT_ALL -> {
-                // 從 PLAY_ONCE 返回循環模式時，恢復完整清單
-                if (old == PlayMode.PLAY_ONCE && activeSongs.isNotEmpty()) {
-                    val idx = activeSongs.indexOfFirst { it.uriString == currentUri }
-                        .coerceAtLeast(0)
-                    val items = activeSongs.map { MediaItem.fromUri(it.uri) }
-                    controller.setMediaItems(items, idx, currentPos)
-                    controller.prepare()
-                }
-                controller.repeatMode =
-                    if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
-                    else Player.REPEAT_MODE_ALL
-                controller.pauseAtEndOfMediaItems = false
-            }
+            controller.repeatMode =
+                if (playMode == PlayMode.REPEAT_ONE) Player.REPEAT_MODE_ONE
+                else Player.REPEAT_MODE_ALL
         }
     }
+}
 
     Box(Modifier.fillMaxSize().background(Color(0xFF0B0B1A))) {
         if (showSettings) {
