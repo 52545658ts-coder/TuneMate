@@ -16,6 +16,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +42,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -86,6 +93,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -146,7 +154,7 @@ sealed class ViewMode {
  * ============================================================ */
 private data class RemoveRequest(
     val song: Song,
-    val fromPlaylistName: String?  // null 表示來自「所有歌曲」
+    val fromPlaylistName: String?
 )
 
 /* ============================================================
@@ -238,10 +246,9 @@ fun AppRoot() {
     var isPlaying by remember { mutableStateOf(false) }
     var playMode by remember { mutableStateOf(PlayMode.REPEAT_ALL) }
     var activeSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    // 播放隊列的來源：null = 所有歌曲；非 null = 該自訂歌單名
     var currentSourcePlaylist by remember { mutableStateOf<String?>(null) }
 
-    // 恢復標記（防止重複恢復、避免恢復期間寫入 DataStore）
+    // 恢復標記
     var restored by remember { mutableStateOf(false) }
 
     // 導航
@@ -289,12 +296,10 @@ fun AppRoot() {
             if (picked.isEmpty()) return@launch
 
             if (playlists.isEmpty()) {
-                // 沒有自訂歌單：直接加入「所有歌曲」
                 val existing = context.songsFlow().first()
                 val merged = (existing + picked).distinctBy { it.uriString }
                 context.saveSongs(merged)
             } else {
-                // 有自訂歌單：讓使用者選擇
                 pendingImport = picked
                 showImportDialog = true
             }
@@ -321,7 +326,6 @@ fun AppRoot() {
         val c = controller ?: return@LaunchedEffect
         if (restored) return@LaunchedEffect
 
-        // 等 DataStore 就緒（first 會等到第一筆）
         val curSongs = songsFlow.first()
         val curPlaylists = playlistsFlow.first()
         val saved = context.playbackStateFlow().first()
@@ -330,7 +334,6 @@ fun AppRoot() {
 
         if (saved.songUri == null) return@LaunchedEffect
 
-        // 決定要恢復的播放隊列
         val queue: List<Song> = when {
             saved.playlistName == null -> curSongs
             else -> curPlaylists.firstOrNull { it.name == saved.playlistName }?.songs ?: curSongs
@@ -338,18 +341,15 @@ fun AppRoot() {
         val idx = queue.indexOfFirst { it.uriString == saved.songUri }
         if (idx < 0) return@LaunchedEffect
 
-        // 恢復播放模式
         val restoredMode = saved.playMode
             ?.let { runCatching { PlayMode.valueOf(it) }.getOrNull() }
         if (restoredMode != null) playMode = restoredMode
 
-        // 更新 UI state（不自動播放）
         activeSongs = queue
         currentSourcePlaylist = saved.playlistName
         currentSong = queue[idx]
         positionMs = saved.positionMs
 
-        // 設定到 controller 並 prepare（不 play）
         val items = queue.map { MediaItem.fromUri(it.uri) }
         c.setMediaItems(items, idx, saved.positionMs)
         c.repeatMode = when (playMode) {
@@ -374,7 +374,7 @@ fun AppRoot() {
         )
     }
 
-    // ---------- 保存：定期保存進度（每 3 秒） ----------
+    // ---------- 保存：定期保存進度 ----------
     LaunchedEffect(controller) {
         val c = controller ?: return@LaunchedEffect
         while (true) {
@@ -393,7 +393,7 @@ fun AppRoot() {
         }
     }
 
-    // 進度輪詢（UI 顯示）
+    // 進度輪詢
     LaunchedEffect(controller) {
         val c = controller ?: return@LaunchedEffect
         while (true) {
@@ -435,12 +435,11 @@ fun AppRoot() {
         onDispose { c.removeListener(listener) }
     }
 
-    // 返回鍵：詳情頁回首頁
+    // 返回鍵
     BackHandler(enabled = !showSettings && viewMode != ViewMode.Home) {
         viewMode = ViewMode.Home
     }
 
-    // MediaController 尚未就緒
     if (controller == null) {
         Box(
             Modifier.fillMaxSize().background(Color(0xFF0B0B1A)),
@@ -525,6 +524,8 @@ fun AppRoot() {
                         is ViewMode.Home -> PlaylistListContent(
                             songs = songs,
                             playlists = playlists,
+                            currentPlayingUri = currentSong?.uriString,
+                            currentSourcePlaylist = currentSourcePlaylist,
                             onOpenAllSongs = { viewMode = ViewMode.AllSongs },
                             onOpenPlaylist = { pl -> viewMode = ViewMode.Custom(pl.name) },
                             onDeletePlaylist = { pl -> playlistToDelete = pl },
@@ -536,6 +537,7 @@ fun AppRoot() {
                         is ViewMode.AllSongs -> SongListContent(
                             title = "所有歌曲",
                             songs = songs,
+                            currentPlayingUri = currentSong?.uriString,
                             isAllSongs = true,
                             onBack = { viewMode = ViewMode.Home },
                             onSongClick = { song ->
@@ -551,6 +553,7 @@ fun AppRoot() {
                                 SongListContent(
                                     title = pl.name,
                                     songs = pl.songs,
+                                    currentPlayingUri = currentSong?.uriString,
                                     isAllSongs = false,
                                     onBack = { viewMode = ViewMode.Home },
                                     onSongClick = { song ->
@@ -695,12 +698,10 @@ fun AppRoot() {
             onConfirm = { targetName ->
                 val toAdd = pendingImport!!
                 scope.launch {
-                    // 1) 始終加入「所有歌曲」
                     val curSongs = context.songsFlow().first()
                     val merged = (curSongs + toAdd).distinctBy { it.uriString }
                     context.saveSongs(merged)
 
-                    // 2) 若選了自訂歌單，也加入該歌單
                     if (targetName != null) {
                         val curPlaylists = context.playlistsFlow().first()
                         context.savePlaylists(
@@ -726,6 +727,8 @@ fun AppRoot() {
 private fun PlaylistListContent(
     songs: List<Song>,
     playlists: List<Playlist>,
+    currentPlayingUri: String?,
+    currentSourcePlaylist: String?,
     onOpenAllSongs: () -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist) -> Unit,
@@ -744,7 +747,6 @@ private fun PlaylistListContent(
             )
             Spacer(Modifier.weight(1f))
 
-            // ➕ 加號下拉選單
             Box {
                 IconButton(onClick = { showAddMenu = true }) {
                     Icon(Icons.Default.Add, "新增", tint = Color.White)
@@ -792,23 +794,27 @@ private fun PlaylistListContent(
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(Modifier.weight(1f)) {
-            // 「所有歌曲」虛擬歌單
+            // 「所有歌曲」：只有從「所有歌曲」隊列播放時才標記
             item {
                 PlaylistRow(
                     icon = Icons.Default.MusicNote,
                     title = "所有歌曲",
                     subtitle = "${songs.size} 首",
+                    isPlaying = currentPlayingUri != null && currentSourcePlaylist == null,
                     onClick = onOpenAllSongs,
                     onDelete = null
                 )
             }
 
-            // 自訂歌單
+            // 自訂歌單：只有「當前播放來源」的這個歌單才標記
             items(playlists) { pl ->
+                val isSourcePlaying = currentPlayingUri != null &&
+                        currentSourcePlaylist == pl.name
                 PlaylistRow(
                     icon = Icons.Default.QueueMusic,
                     title = pl.name,
                     subtitle = "${pl.songs.size} 首",
+                    isPlaying = isSourcePlaying,
                     onClick = { onOpenPlaylist(pl) },
                     onDelete = { onDeletePlaylist(pl) }
                 )
@@ -818,44 +824,67 @@ private fun PlaylistListContent(
 }
 
 /* ============================================================
- * 歌單列（主頁）
+ * 歌單列（主頁，含播放中特效）
  * ============================================================ */
 @Composable
 private fun PlaylistRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
+    isPlaying: Boolean,
     onClick: () -> Unit,
     onDelete: (() -> Unit)?
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
+    // 播放中的脈衝動畫
+    val infinite = rememberInfiniteTransition(label = "playlistRowPulse")
+    val pulse by infinite.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "playlistRowPulseAlpha"
+    )
+
     Row(
         Modifier
             .fillMaxWidth()
+            .background(
+                if (isPlaying) Color(0xFF4FC3F7).copy(alpha = 0.14f)
+                else Color.Transparent,
+                RoundedCornerShape(10.dp)
+            )
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 4.dp),
+            .padding(vertical = 12.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            icon,
+            if (isPlaying) Icons.Default.PlayArrow else icon,
             contentDescription = null,
-            tint = Color(0xFF4FC3F7),
-            modifier = Modifier.size(28.dp)
+            tint = if (isPlaying) Color(0xFF4FC3F7)
+            else Color(0xFF4FC3F7).copy(alpha = 0.7f),
+            modifier = Modifier
+                .size(28.dp)
+                .alpha(if (isPlaying) pulse else 1f)
         )
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
+                color = if (isPlaying) Color(0xFF4FC3F7) else Color.White,
+                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
+                color = if (isPlaying) Color(0xFF4FC3F7).copy(alpha = 0.75f)
+                else Color.Gray
             )
         }
 
@@ -899,6 +928,7 @@ private fun PlaylistRow(
 private fun SongListContent(
     title: String,
     songs: List<Song>,
+    currentPlayingUri: String?,
     isAllSongs: Boolean,
     onBack: () -> Unit,
     onSongClick: (Song) -> Unit,
@@ -944,6 +974,8 @@ private fun SongListContent(
                 items(songs) { song ->
                     SongRow(
                         song = song,
+                        isPlaying = currentPlayingUri != null &&
+                                song.uriString == currentPlayingUri,
                         onClick = { onSongClick(song) },
                         onRemove = { onRemove(song) }
                     )
@@ -954,39 +986,62 @@ private fun SongListContent(
 }
 
 /* ============================================================
- * 歌曲列（含 ⋮ 選單）
+ * 歌曲列（含 ⋮ 選單 + 播放中特效）
  * ============================================================ */
 @Composable
 private fun SongRow(
     song: Song,
+    isPlaying: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
+    val infinite = rememberInfiniteTransition(label = "songRowPulse")
+    val pulse by infinite.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "songRowPulseAlpha"
+    )
+
     Row(
         Modifier
             .fillMaxWidth()
+            .background(
+                if (isPlaying) Color(0xFF4FC3F7).copy(alpha = 0.14f)
+                else Color.Transparent,
+                RoundedCornerShape(10.dp)
+            )
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
+            .padding(vertical = 10.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            Icons.Default.MusicNote,
+            if (isPlaying) Icons.Default.PlayArrow else Icons.Default.MusicNote,
             contentDescription = null,
-            tint = Color(0xFF4FC3F7)
+            tint = if (isPlaying) Color(0xFF4FC3F7)
+            else Color(0xFF4FC3F7).copy(alpha = 0.7f),
+            modifier = Modifier
+                .size(24.dp)
+                .alpha(if (isPlaying) pulse else 1f)
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 song.title,
-                color = Color.White,
+                color = if (isPlaying) Color(0xFF4FC3F7) else Color.White,
+                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 song.artist,
-                color = Color.Gray,
+                color = if (isPlaying) Color(0xFF4FC3F7).copy(alpha = 0.75f)
+                else Color.Gray,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
