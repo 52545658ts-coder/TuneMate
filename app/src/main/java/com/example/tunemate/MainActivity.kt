@@ -69,6 +69,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +85,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -100,6 +102,7 @@ import com.example.tunemate.model.Playlist
 import com.example.tunemate.model.Song
 import com.example.tunemate.playback.PlaybackService
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -356,6 +359,7 @@ fun AppRoot(songs: List<Song>, onRequestSongs: () -> Unit) {
                 playMode = playMode,
                 backgroundUri = backgroundUri,
                 blurRadius = blurRadius,
+                activeSongs = activeSongs,
                 onRequestSongs = onRequestSongs,
                 onCreatePlaylist = { showCreateDialog = true },
                 onPlaySong = { list, idx -> playFrom(list, idx) },
@@ -390,13 +394,29 @@ fun PlayerScreen(
     playMode: PlayMode,
     backgroundUri: Uri?,
     blurRadius: Float,
+    activeSongs: List<Song>,
     onRequestSongs: () -> Unit,
     onCreatePlaylist: () -> Unit,
     onPlaySong: (List<Song>, Int) -> Unit,
     onCyclePlayMode: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    var activeList by remember { mutableStateOf<List<Song>>(emptyList()) }
+    // ---------- 播放進度狀態 ----------
+    var positionMs by remember { mutableLongStateOf(0L) }
+    var durationMs by remember { mutableLongStateOf(0L) }
+    var isDragging by remember { mutableStateOf(false) }
+    var dragMs by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(player) {
+        while (true) {
+            val dur = player.duration
+            if (dur != C.TIME_UNSET && dur > 0) durationMs = dur
+            if (!isDragging) {
+                positionMs = player.currentPosition.coerceIn(0L, durationMs)
+            }
+            delay(300)
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         if (backgroundUri != null) {
@@ -446,7 +466,6 @@ fun PlayerScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     if (pl.songs.isNotEmpty()) {
-                                        activeList = pl.songs
                                         onPlaySong(pl.songs, 0)
                                     }
                                 }
@@ -473,9 +492,15 @@ fun PlayerScreen(
                         Modifier
                             .fillMaxWidth()
                             .clickable {
-                                val list = if (activeList.isEmpty()) songs else activeList
-                                val idx = list.indexOf(song).coerceAtLeast(0)
-                                onPlaySong(list, idx)
+                                // 若當前 activeSongs 已包含這首歌，就用 activeSongs 繼續；
+                                // 否則退回「所有歌曲」作為新的播放清單。
+                                val idxInActive = activeSongs.indexOf(song)
+                                if (idxInActive >= 0) {
+                                    onPlaySong(activeSongs, idxInActive)
+                                } else {
+                                    val fallback = songs.indexOf(song)
+                                    if (fallback >= 0) onPlaySong(songs, fallback)
+                                }
                             }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -517,6 +542,45 @@ fun PlayerScreen(
                 )
             }
 
+            // ===================== 播放進度條 =====================
+            val sliderMax = durationMs.coerceAtLeast(1L).toFloat()
+            val sliderValue = (if (isDragging) dragMs else positionMs.toFloat())
+                .coerceIn(0f, sliderMax)
+
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Slider(
+                    value = sliderValue,
+                    onValueChange = {
+                        isDragging = true
+                        dragMs = it
+                    },
+                    onValueChangeFinished = {
+                        player.seekTo(dragMs.toLong())
+                        positionMs = dragMs.toLong()
+                        isDragging = false
+                        if (!player.isPlaying) player.play()
+                    },
+                    valueRange = 0f..sliderMax,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        formatMs(if (isDragging) dragMs.toLong() else positionMs),
+                        color = Color.LightGray,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        formatMs(durationMs),
+                        color = Color.LightGray,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            // ===================== 控制按鈕 =====================
             Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -865,4 +929,15 @@ fun CreatePlaylistDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
+}
+
+/* ============================================================
+ * 工具：毫秒 → mm:ss
+ * ============================================================ */
+private fun formatMs(ms: Long): String {
+    if (ms <= 0) return "00:00"
+    val totalSec = ms / 1000
+    val m = totalSec / 60
+    val s = totalSec % 60
+    return "%02d:%02d".format(m, s)
 }
