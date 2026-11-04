@@ -16,11 +16,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -526,6 +525,7 @@ fun AppRoot() {
                             playlists = playlists,
                             currentPlayingUri = currentSong?.uriString,
                             currentSourcePlaylist = currentSourcePlaylist,
+                            isPlaying = isPlaying,
                             onOpenAllSongs = { viewMode = ViewMode.AllSongs },
                             onOpenPlaylist = { pl -> viewMode = ViewMode.Custom(pl.name) },
                             onDeletePlaylist = { pl -> playlistToDelete = pl },
@@ -539,6 +539,7 @@ fun AppRoot() {
                             songs = songs,
                             currentPlayingUri = currentSong?.uriString,
                             isAllSongs = true,
+                            isPlaying = isPlaying,
                             onBack = { viewMode = ViewMode.Home },
                             onSongClick = { song ->
                                 val idx = songs.indexOf(song).coerceAtLeast(0)
@@ -555,6 +556,7 @@ fun AppRoot() {
                                     songs = pl.songs,
                                     currentPlayingUri = currentSong?.uriString,
                                     isAllSongs = false,
+                                    isPlaying = isPlaying,
                                     onBack = { viewMode = ViewMode.Home },
                                     onSongClick = { song ->
                                         val idx = pl.songs.indexOf(song).coerceAtLeast(0)
@@ -729,6 +731,7 @@ private fun PlaylistListContent(
     playlists: List<Playlist>,
     currentPlayingUri: String?,
     currentSourcePlaylist: String?,
+    isPlaying: Boolean,
     onOpenAllSongs: () -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist) -> Unit,
@@ -796,11 +799,13 @@ private fun PlaylistListContent(
         LazyColumn(Modifier.weight(1f)) {
             // 「所有歌曲」：只有從「所有歌曲」隊列播放時才標記
             item {
+                val isSource = currentPlayingUri != null && currentSourcePlaylist == null
                 PlaylistRow(
                     icon = Icons.Default.MusicNote,
                     title = "所有歌曲",
                     subtitle = "${songs.size} 首",
-                    isPlaying = currentPlayingUri != null && currentSourcePlaylist == null,
+                    isHighlighted = isSource,
+                    isAnimating = isSource && isPlaying,
                     onClick = onOpenAllSongs,
                     onDelete = null
                 )
@@ -808,13 +813,13 @@ private fun PlaylistListContent(
 
             // 自訂歌單：只有「當前播放來源」的這個歌單才標記
             items(playlists) { pl ->
-                val isSourcePlaying = currentPlayingUri != null &&
-                        currentSourcePlaylist == pl.name
+                val isSource = currentPlayingUri != null && currentSourcePlaylist == pl.name
                 PlaylistRow(
                     icon = Icons.Default.QueueMusic,
                     title = pl.name,
                     subtitle = "${pl.songs.size} 首",
-                    isPlaying = isSourcePlaying,
+                    isHighlighted = isSource,
+                    isAnimating = isSource && isPlaying,
                     onClick = { onOpenPlaylist(pl) },
                     onDelete = { onDeletePlaylist(pl) }
                 )
@@ -824,37 +829,43 @@ private fun PlaylistListContent(
 }
 
 /* ============================================================
- * 歌單列（主頁，呼吸發光特效，無邊框，4 秒一輪）
+ * 歌單列（主頁，呼吸發光特效，跟隨播放/暫停）
  * ============================================================ */
 @Composable
 private fun PlaylistRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    isPlaying: Boolean,
+    isHighlighted: Boolean,
+    isAnimating: Boolean,
     onClick: () -> Unit,
     onDelete: (() -> Unit)?
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    // 呼吸動畫：0f ↔ 1f，2000ms 去 + 2000ms 回 = 4 秒一輪
-    val infinite = rememberInfiniteTransition(label = "playlistRowBreath")
-    val breath by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "playlistRowBreathValue"
-    )
+    // 用 Animatable 取代 rememberInfiniteTransition，才能隨播放/暫停啟動/停止
+    val breath = remember { Animatable(0f) }
+    LaunchedEffect(isAnimating) {
+        if (isAnimating) {
+            breath.animateTo(
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(2000, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                )
+            )
+        } else {
+            breath.stop()
+        }
+    }
 
     val accent = Color(0xFF4FC3F7)
     val shape = RoundedCornerShape(12.dp)
+    val b = breath.value
 
-    val bgAlpha = if (isPlaying) 0.10f + breath * 0.20f else 0f
-    val iconAlpha = if (isPlaying) 0.65f + breath * 0.35f else 1f
-    val subAlpha = if (isPlaying) 0.70f + breath * 0.30f else 1f
+    val bgAlpha = if (isHighlighted) 0.10f + b * 0.20f else 0f
+    val iconAlpha = if (isHighlighted) 0.65f + b * 0.35f else 1f
+    val subAlpha = if (isHighlighted) 0.70f + b * 0.30f else 1f
 
     Row(
         Modifier
@@ -867,9 +878,9 @@ private fun PlaylistRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            if (isPlaying) Icons.Default.PlayArrow else icon,
+            if (isHighlighted) Icons.Default.PlayArrow else icon,
             contentDescription = null,
-            tint = if (isPlaying) accent.copy(alpha = iconAlpha)
+            tint = if (isHighlighted) accent.copy(alpha = iconAlpha)
             else accent.copy(alpha = 0.7f),
             modifier = Modifier.size(28.dp)
         )
@@ -878,15 +889,15 @@ private fun PlaylistRow(
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
-                color = if (isPlaying) accent else Color.White,
-                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
+                color = if (isHighlighted) accent else Color.White,
+                fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isPlaying) accent.copy(alpha = subAlpha) else Color.Gray
+                color = if (isHighlighted) accent.copy(alpha = subAlpha) else Color.Gray
             )
         }
 
@@ -932,6 +943,7 @@ private fun SongListContent(
     songs: List<Song>,
     currentPlayingUri: String?,
     isAllSongs: Boolean,
+    isPlaying: Boolean,
     onBack: () -> Unit,
     onSongClick: (Song) -> Unit,
     onRemove: (Song) -> Unit
@@ -974,10 +986,12 @@ private fun SongListContent(
         } else {
             LazyColumn(Modifier.weight(1f)) {
                 items(songs) { song ->
+                    val isCurrent = currentPlayingUri != null &&
+                            song.uriString == currentPlayingUri
                     SongRow(
                         song = song,
-                        isPlaying = currentPlayingUri != null &&
-                                song.uriString == currentPlayingUri,
+                        isHighlighted = isCurrent,
+                        isAnimating = isCurrent && isPlaying,
                         onClick = { onSongClick(song) },
                         onRemove = { onRemove(song) }
                     )
@@ -988,35 +1002,40 @@ private fun SongListContent(
 }
 
 /* ============================================================
- * 歌曲列（含 ⋮ 選單 + 呼吸發光特效，無邊框，4 秒一輪）
+ * 歌曲列（含 ⋮ 選單 + 呼吸發光特效，跟隨播放/暫停）
  * ============================================================ */
 @Composable
 private fun SongRow(
     song: Song,
-    isPlaying: Boolean,
+    isHighlighted: Boolean,
+    isAnimating: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    // 呼吸動畫：0f ↔ 1f，2000ms 去 + 2000ms 回 = 4 秒一輪
-    val infinite = rememberInfiniteTransition(label = "songRowBreath")
-    val breath by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "songRowBreathValue"
-    )
+    val breath = remember { Animatable(0f) }
+    LaunchedEffect(isAnimating) {
+        if (isAnimating) {
+            breath.animateTo(
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(2000, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                )
+            )
+        } else {
+            breath.stop()
+        }
+    }
 
     val accent = Color(0xFF4FC3F7)
     val shape = RoundedCornerShape(12.dp)
+    val b = breath.value
 
-    val bgAlpha = if (isPlaying) 0.10f + breath * 0.20f else 0f
-    val iconAlpha = if (isPlaying) 0.65f + breath * 0.35f else 1f
-    val subAlpha = if (isPlaying) 0.70f + breath * 0.30f else 1f
+    val bgAlpha = if (isHighlighted) 0.10f + b * 0.20f else 0f
+    val iconAlpha = if (isHighlighted) 0.65f + b * 0.35f else 1f
+    val subAlpha = if (isHighlighted) 0.70f + b * 0.30f else 1f
 
     Row(
         Modifier
@@ -1029,9 +1048,9 @@ private fun SongRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            if (isPlaying) Icons.Default.PlayArrow else Icons.Default.MusicNote,
+            if (isHighlighted) Icons.Default.PlayArrow else Icons.Default.MusicNote,
             contentDescription = null,
-            tint = if (isPlaying) accent.copy(alpha = iconAlpha)
+            tint = if (isHighlighted) accent.copy(alpha = iconAlpha)
             else accent.copy(alpha = 0.7f),
             modifier = Modifier.size(24.dp)
         )
@@ -1039,14 +1058,14 @@ private fun SongRow(
         Column(Modifier.weight(1f)) {
             Text(
                 song.title,
-                color = if (isPlaying) accent else Color.White,
-                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
+                color = if (isHighlighted) accent else Color.White,
+                fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 song.artist,
-                color = if (isPlaying) accent.copy(alpha = subAlpha) else Color.Gray,
+                color = if (isHighlighted) accent.copy(alpha = subAlpha) else Color.Gray,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
