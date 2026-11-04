@@ -18,8 +18,6 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -843,19 +841,14 @@ private fun PlaylistRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    // 用 Animatable 取代 rememberInfiniteTransition，才能隨播放/暫停啟動/停止
+    // 使用 while(true) 手動循環，確保從任何起點都能完整呼吸
     val breath = remember { Animatable(0f) }
     LaunchedEffect(isAnimating) {
         if (isAnimating) {
-            breath.animateTo(
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(2000, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                )
-            )
-        } else {
-            breath.stop()
+            while (true) {
+                breath.animateTo(1f, tween(2000, easing = FastOutSlowInEasing))
+                breath.animateTo(0f, tween(2000, easing = FastOutSlowInEasing))
+            }
         }
     }
 
@@ -1017,15 +1010,10 @@ private fun SongRow(
     val breath = remember { Animatable(0f) }
     LaunchedEffect(isAnimating) {
         if (isAnimating) {
-            breath.animateTo(
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(2000, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                )
-            )
-        } else {
-            breath.stop()
+            while (true) {
+                breath.animateTo(1f, tween(2000, easing = FastOutSlowInEasing))
+                breath.animateTo(0f, tween(2000, easing = FastOutSlowInEasing))
+            }
         }
     }
 
