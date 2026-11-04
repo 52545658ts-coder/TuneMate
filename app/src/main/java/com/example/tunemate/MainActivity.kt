@@ -38,7 +38,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Equalizer
-import androidx.compose.material.icons.filled.Filter1
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -623,12 +622,18 @@ fun PlayerScreen(
                     val (icon, label) = when (playMode) {
                         PlayMode.REPEAT_ONE -> Icons.Default.RepeatOne to "單曲循環"
                         PlayMode.REPEAT_ALL -> Icons.Default.Repeat to "歌單循環"
-                        PlayMode.PLAY_ONCE -> Icons.Default.Filter1 to "只播一次"
+                        // 只播一次：使用與循環相同的 Repeat 圖示，但顯示為灰色
+                        PlayMode.PLAY_ONCE -> Icons.Default.Repeat to "只播一次"
+                    }
+                    val tint = if (playMode == PlayMode.PLAY_ONCE) {
+                        Color.Gray
+                    } else {
+                        Color(0xFF4FC3F7)
                     }
                     Icon(
                         icon,
                         label,
-                        tint = Color(0xFF4FC3F7),
+                        tint = tint,
                         modifier = Modifier.size(32.dp)
                     )
                 }
