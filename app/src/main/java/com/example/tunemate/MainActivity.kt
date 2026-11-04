@@ -101,11 +101,14 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
+import com.example.tunemate.data.PlaybackState
 import com.example.tunemate.data.backgroundFlow
 import com.example.tunemate.data.buildSongFromUri
+import com.example.tunemate.data.playbackStateFlow
 import com.example.tunemate.data.playlistsFlow
 import com.example.tunemate.data.saveBackground
 import com.example.tunemate.data.saveBackgroundImage
+import com.example.tunemate.data.savePlaybackState
 import com.example.tunemate.data.savePlaylists
 import com.example.tunemate.data.saveSongs
 import com.example.tunemate.data.songsFlow
@@ -140,12 +143,10 @@ sealed class ViewMode {
 
 /* ============================================================
  * 移除歌曲請求
- * fromPlaylistName == null 表示「從所有歌曲刪除」（同時從所有歌單刪除）
- * 否則僅從指定歌單移除
  * ============================================================ */
 private data class RemoveRequest(
     val song: Song,
-    val fromPlaylistName: String?
+    val fromPlaylistName: String?  // null 表示來自「所有歌曲」
 )
 
 /* ============================================================
@@ -237,6 +238,11 @@ fun AppRoot() {
     var isPlaying by remember { mutableStateOf(false) }
     var playMode by remember { mutableStateOf(PlayMode.REPEAT_ALL) }
     var activeSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    // 播放隊列的來源：null = 所有歌曲；非 null = 該自訂歌單名
+    var currentSourcePlaylist by remember { mutableStateOf<String?>(null) }
+
+    // 恢復標記（防止重複恢復、避免恢復期間寫入 DataStore）
+    var restored by remember { mutableStateOf(false) }
 
     // 導航
     var viewMode by remember { mutableStateOf<ViewMode>(ViewMode.Home) }
@@ -310,7 +316,84 @@ fun AppRoot() {
         }
     }
 
-    // 進度輪詢
+    // ---------- 恢復上次播放狀態 ----------
+    LaunchedEffect(controller) {
+        val c = controller ?: return@LaunchedEffect
+        if (restored) return@LaunchedEffect
+
+        // 等 DataStore 就緒（first 會等到第一筆）
+        val curSongs = songsFlow.first()
+        val curPlaylists = playlistsFlow.first()
+        val saved = context.playbackStateFlow().first()
+
+        restored = true
+
+        if (saved.songUri == null) return@LaunchedEffect
+
+        // 決定要恢復的播放隊列
+        val queue: List<Song> = when {
+            saved.playlistName == null -> curSongs
+            else -> curPlaylists.firstOrNull { it.name == saved.playlistName }?.songs ?: curSongs
+        }
+        val idx = queue.indexOfFirst { it.uriString == saved.songUri }
+        if (idx < 0) return@LaunchedEffect
+
+        // 恢復播放模式
+        val restoredMode = saved.playMode
+            ?.let { runCatching { PlayMode.valueOf(it) }.getOrNull() }
+        if (restoredMode != null) playMode = restoredMode
+
+        // 更新 UI state（不自動播放）
+        activeSongs = queue
+        currentSourcePlaylist = saved.playlistName
+        currentSong = queue[idx]
+        positionMs = saved.positionMs
+
+        // 設定到 controller 並 prepare（不 play）
+        val items = queue.map { MediaItem.fromUri(it.uri) }
+        c.setMediaItems(items, idx, saved.positionMs)
+        c.repeatMode = when (playMode) {
+            PlayMode.REPEAT_ONE -> Player.REPEAT_MODE_ONE
+            PlayMode.REPEAT_ALL -> Player.REPEAT_MODE_ALL
+            PlayMode.PLAY_ONCE -> Player.REPEAT_MODE_OFF
+        }
+        c.prepare()
+    }
+
+    // ---------- 保存：歌曲/歌單/模式變化時立即保存 ----------
+    LaunchedEffect(currentSong, currentSourcePlaylist, activeSongs, playMode) {
+        val c = controller ?: return@LaunchedEffect
+        val song = currentSong ?: return@LaunchedEffect
+        context.savePlaybackState(
+            PlaybackState(
+                songUri = song.uriString,
+                playlistName = currentSourcePlaylist,
+                positionMs = c.currentPosition.coerceAtLeast(0L),
+                playMode = playMode.name
+            )
+        )
+    }
+
+    // ---------- 保存：定期保存進度（每 3 秒） ----------
+    LaunchedEffect(controller) {
+        val c = controller ?: return@LaunchedEffect
+        while (true) {
+            delay(3000)
+            if (!restored) continue
+            val song = currentSong ?: continue
+            if (isDragging) continue
+            context.savePlaybackState(
+                PlaybackState(
+                    songUri = song.uriString,
+                    playlistName = currentSourcePlaylist,
+                    positionMs = c.currentPosition.coerceAtLeast(0L),
+                    playMode = playMode.name
+                )
+            )
+        }
+    }
+
+    // 進度輪詢（UI 顯示）
     LaunchedEffect(controller) {
         val c = controller ?: return@LaunchedEffect
         while (true) {
@@ -369,9 +452,10 @@ fun AppRoot() {
     }
 
     // ---------- 本地播放函式 ----------
-    fun playFrom(list: List<Song>, index: Int) {
+    fun playFrom(list: List<Song>, index: Int, sourcePlaylist: String?) {
         if (list.isEmpty() || index !in list.indices) return
         activeSongs = list
+        currentSourcePlaylist = sourcePlaylist
         val song = list[index]
         when (playMode) {
             PlayMode.PLAY_ONCE -> {
@@ -456,7 +540,7 @@ fun AppRoot() {
                             onBack = { viewMode = ViewMode.Home },
                             onSongClick = { song ->
                                 val idx = songs.indexOf(song).coerceAtLeast(0)
-                                playFrom(songs, idx)
+                                playFrom(songs, idx, null)
                             },
                             onRemove = { song -> removeRequest = RemoveRequest(song, null) }
                         )
@@ -471,7 +555,7 @@ fun AppRoot() {
                                     onBack = { viewMode = ViewMode.Home },
                                     onSongClick = { song ->
                                         val idx = pl.songs.indexOf(song).coerceAtLeast(0)
-                                        playFrom(pl.songs, idx)
+                                        playFrom(pl.songs, idx, pl.name)
                                     },
                                     onRemove = { song ->
                                         removeRequest = RemoveRequest(song, pl.name)
@@ -958,7 +1042,6 @@ private fun BottomPlayerBar(
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        // 正在播放
         Text(
             text = currentSong?.let { "正在播放：${it.title}" } ?: "尚未播放",
             color = if (currentSong != null) Color.White else Color.Gray,
