@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Equalizer
@@ -52,6 +53,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -406,6 +409,9 @@ fun PlayerScreen(
     var isDragging by remember { mutableStateOf(false) }
     var dragMs by remember { mutableFloatStateOf(0f) }
 
+    // ---------- 加號下拉選單狀態 ----------
+    var showAddMenu by remember { mutableStateOf(false) }
+
     LaunchedEffect(player) {
         while (true) {
             val dur = player.duration
@@ -435,6 +441,7 @@ fun PlayerScreen(
         }
 
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
+            // ===================== 頂部標題列 =====================
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "TuneMate",
@@ -442,18 +449,52 @@ fun PlayerScreen(
                     color = Color.White
                 )
                 Spacer(Modifier.weight(1f))
+
+                // ➕ 加號按鈕 + 下拉式選單
+                Box {
+                    IconButton(onClick = { showAddMenu = true }) {
+                        Icon(Icons.Default.Add, "新增", tint = Color.White)
+                    }
+                    DropdownMenu(
+                        expanded = showAddMenu,
+                        onDismissRequest = { showAddMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("匯入音頻", color = Color.White) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4FC3F7)
+                                )
+                            },
+                            onClick = {
+                                showAddMenu = false
+                                onRequestSongs()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("建立歌單", color = Color.White) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.QueueMusic,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4FC3F7)
+                                )
+                            },
+                            onClick = {
+                                showAddMenu = false
+                                onCreatePlaylist()
+                            }
+                        )
+                    }
+                }
+
                 IconButton(onClick = onOpenSettings) {
                     Icon(Icons.Default.Settings, "設置", tint = Color.White)
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-
-            Row {
-                Button(onClick = onRequestSongs) { Text("匯入音頻") }
-                Spacer(Modifier.width(8.dp))
-                Button(onClick = onCreatePlaylist) { Text("建立歌單") }
-            }
             Spacer(Modifier.height(8.dp))
 
             if (playlists.isNotEmpty()) {
@@ -491,8 +532,6 @@ fun PlayerScreen(
                         Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // 若當前 activeSongs 已包含這首歌，就用 activeSongs 繼續；
-                                // 否則退回「所有歌曲」作為新的播放清單。
                                 val idxInActive = activeSongs.indexOf(song)
                                 if (idxInActive >= 0) {
                                     onPlaySong(activeSongs, idxInActive)
