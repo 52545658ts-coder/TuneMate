@@ -2,6 +2,7 @@ package com.example.tunemate.playback
 
 import android.content.Intent
 import android.media.audiofx.Equalizer
+import android.media.audiofx.LoudnessEnhancer
 import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -14,6 +15,7 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private var equalizer: Equalizer? = null
+    private var loudnessEnhancer: LoudnessEnhancer? = null
     private var equalizerSessionId = C.AUDIO_SESSION_ID_UNSET
 
     override fun onCreate() {
@@ -26,21 +28,23 @@ class PlaybackService : MediaSessionService() {
         // 監聽 audio session 建立／變化事件
         player.addListener(object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                setupEqualizer(audioSessionId)
+                setupAudioEffects(audioSessionId)
             }
         })
 
         // 若建構後立即已有 session id（部分裝置會這樣），先嘗試建立
-        setupEqualizer(player.audioSessionId)
+        setupAudioEffects(player.audioSessionId)
 
         mediaSession = MediaSession.Builder(this, player).build()
     }
 
-    private fun setupEqualizer(sessionId: Int) {
+    private fun setupAudioEffects(sessionId: Int) {
         if (sessionId == C.AUDIO_SESSION_ID_UNSET) return
         if (equalizer != null && equalizerSessionId == sessionId) return
 
-        releaseEqualizer()
+        releaseAudioEffects()
+
+        // Equalizer
         try {
             val eq = Equalizer(0, sessionId).apply { enabled = true }
             equalizer = eq
@@ -49,9 +53,21 @@ class PlaybackService : MediaSessionService() {
         } catch (e: Exception) {
             Log.e("PlaybackService", "建立 Equalizer 失敗", e)
         }
+
+        // LoudnessEnhancer（音量增幅器）
+        try {
+            val le = LoudnessEnhancer(sessionId).apply {
+                setTargetGain(0)  // 預設不增幅
+                enabled = true
+            }
+            loudnessEnhancer = le
+            EqualizerHolder.attachBooster(le)
+        } catch (e: Exception) {
+            Log.e("PlaybackService", "建立 LoudnessEnhancer 失敗", e)
+        }
     }
 
-    private fun releaseEqualizer() {
+    private fun releaseAudioEffects() {
         equalizer?.let {
             EqualizerHolder.detach(it)
             runCatching { it.enabled = false }
@@ -59,13 +75,20 @@ class PlaybackService : MediaSessionService() {
         }
         equalizer = null
         equalizerSessionId = C.AUDIO_SESSION_ID_UNSET
+
+        loudnessEnhancer?.let {
+            EqualizerHolder.detachBooster(it)
+            runCatching { it.enabled = false }
+            runCatching { it.release() }
+        }
+        loudnessEnhancer = null
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         mediaSession
 
     override fun onDestroy() {
-        releaseEqualizer()
+        releaseAudioEffects()
         mediaSession?.run {
             player.release()
             release()
@@ -74,15 +97,6 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    /**
-     * 使用者把 App 從最近任務中劃掉時，完全停止：
-     *  - 停止播放（不保留位置）
-     *  - 清除前台通知（透過 pauseAllPlayersAndStopSelf）
-     *  - 停止 service 本身，讓系統可以回收進程
-     *
-     * 注意：播放狀態已由 UI 層（MainActivity）定期寫入 DataStore，
-     * 這裡不需要再持久化。
-     */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
         player?.stop()
