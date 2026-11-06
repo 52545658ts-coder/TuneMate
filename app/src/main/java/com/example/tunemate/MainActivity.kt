@@ -88,7 +88,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1637,7 +1637,7 @@ private fun BackgroundSettingsPage(
 }
 
 /* ============================================================
- * 主題設定頁面（獨立預覽區，不受全局背景干擾）
+ * 主題設定頁面
  * ============================================================ */
 @Composable
 private fun ThemeSettingsPage(
