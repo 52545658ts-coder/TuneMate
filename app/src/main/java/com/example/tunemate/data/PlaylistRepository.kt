@@ -31,12 +31,14 @@ private val PB_PLAY_MODE = stringPreferencesKey("pb_play_mode")
 
 private val THEME_BG_COLOR = longPreferencesKey("theme_bg_color")
 private val THEME_ACCENT_COLOR = longPreferencesKey("theme_accent_color")
+private val THEME_TEXT_COLOR = longPreferencesKey("theme_text_color")
 
 private val json = Json { ignoreUnknownKeys = true }
 
 // ---------- 預設主題色 ----------
 const val DEFAULT_BG_COLOR: Long = 0xFF0B0B1AL
 const val DEFAULT_ACCENT_COLOR: Long = 0xFF4FC3F7L
+const val DEFAULT_TEXT_COLOR: Long = 0xFFFFFFFFL
 
 // ---------- 已匯入歌曲 ----------
 fun Context.songsFlow(): Flow<List<Song>> = dataStore.data.map { prefs ->
@@ -127,19 +129,22 @@ suspend fun Context.clearPlaybackState() {
 // ---------- 主題色 ----------
 data class ThemePrefs(
     val backgroundColor: Long = DEFAULT_BG_COLOR,
-    val accentColor: Long = DEFAULT_ACCENT_COLOR
+    val accentColor: Long = DEFAULT_ACCENT_COLOR,
+    val textColor: Long = DEFAULT_TEXT_COLOR
 )
 
 fun Context.themeFlow(): Flow<ThemePrefs> = dataStore.data.map { prefs ->
     ThemePrefs(
         backgroundColor = prefs[THEME_BG_COLOR] ?: DEFAULT_BG_COLOR,
-        accentColor = prefs[THEME_ACCENT_COLOR] ?: DEFAULT_ACCENT_COLOR
+        accentColor = prefs[THEME_ACCENT_COLOR] ?: DEFAULT_ACCENT_COLOR,
+        textColor = prefs[THEME_TEXT_COLOR] ?: DEFAULT_TEXT_COLOR
     )
 }
 
-suspend fun Context.saveTheme(backgroundColor: Long, accentColor: Long) {
+suspend fun Context.saveTheme(backgroundColor: Long, accentColor: Long, textColor: Long) {
     dataStore.edit { prefs ->
         prefs[THEME_BG_COLOR] = backgroundColor
         prefs[THEME_ACCENT_COLOR] = accentColor
+        prefs[THEME_TEXT_COLOR] = textColor
     }
 }
