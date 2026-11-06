@@ -19,7 +19,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
+import androidx.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -143,9 +143,9 @@ import kotlinx.coroutines.withContext
  * 播放模式
  * ============================================================ */
 enum class PlayMode {
-    REPEAT_ONE,   // 單曲循環
-    REPEAT_ALL,   // 歌單循環
-    PLAY_ONCE     // 只播當前這首一次，播完停止
+    REPEAT_ONE,
+    REPEAT_ALL,
+    PLAY_ONCE
 }
 
 /* ============================================================
@@ -238,11 +238,12 @@ fun AppRoot() {
 
     val bgColor = Color(themePrefs.backgroundColor)
     val accent = Color(themePrefs.accentColor)
+    val textColor = Color(themePrefs.textColor)
     
     // 如果背景是純黑，讓對話框的底色稍微亮一點，避免融合看不清
     val surfaceColor = if (bgColor == Color.Black) Color(0xFF1E1E1E) else bgColor
 
-    // 自定義 Material 顏色方案，強制所有內建組件使用主題色
+    // 自定義 Material 顏色方案，強制文字與圖標使用主題設定的文字顏色
     val customColorScheme = darkColorScheme(
         primary = accent,
         onPrimary = Color.White,
@@ -250,11 +251,11 @@ fun AppRoot() {
         onPrimaryContainer = accent,
         secondary = accent,
         background = bgColor,
-        onBackground = Color.White,
+        onBackground = textColor,
         surface = surfaceColor,
-        onSurface = Color.White,
+        onSurface = textColor,
         surfaceVariant = surfaceColor,
-        onSurfaceVariant = Color.LightGray
+        onSurfaceVariant = textColor.copy(alpha = 0.7f)
     )
 
     MaterialTheme(colorScheme = customColorScheme) {
@@ -557,8 +558,8 @@ fun AppContent(themePrefs: ThemePrefs) {
                     scope.launch { context.saveBackground(uri?.toString(), blur) }
                 },
                 themePrefs = themePrefs,
-                onThemeChanged = { bg, ac ->
-                    scope.launch { context.saveTheme(bg, ac) }
+                onThemeChanged = { bg, ac, tx ->
+                    scope.launch { context.saveTheme(bg, ac, tx) }
                 },
                 onBack = { showSettings = false }
             )
@@ -1411,7 +1412,7 @@ fun SettingsScreen(
     blurRadius: Float,
     onBackgroundChanged: (Uri?, Float) -> Unit,
     themePrefs: ThemePrefs,
-    onThemeChanged: (Long, Long) -> Unit,
+    onThemeChanged: (Long, Long, Long) -> Unit,
     onBack: () -> Unit
 ) {
     var subPage by remember { mutableStateOf(SettingsSubPage.MAIN) }
@@ -1475,7 +1476,7 @@ private fun SettingsMainPage(
         SettingsEntry(
             icon = Icons.Default.Palette,
             title = "主題",
-            subtitle = "設定預設背景顏色和特效顏色",
+            subtitle = "設定背景、特效與文字顏色",
             onClick = onOpenTheme
         )
         SettingsEntry(
@@ -1510,9 +1511,9 @@ private fun SettingsEntry(
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
         }
-        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f))
 }
@@ -1596,7 +1597,7 @@ private fun BackgroundSettingsPage(
 
         Spacer(Modifier.height(24.dp))
 
-        Text("預覽", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        Text("預覽", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
         Box(
             Modifier
@@ -1613,30 +1614,33 @@ private fun BackgroundSettingsPage(
                     modifier = Modifier.fillMaxSize().blur(pendingBlur.dp)
                 )
             } else {
-                Text("使用預設漸層背景", color = Color.Gray)
+                Text("使用預設漸層背景", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
             }
         }
     }
 }
 
 /* ============================================================
- * 主題設定頁面（完全移除圓盤，只保留滑桿）
+ * 主題設定頁面（包含背景、特效、文字顏色）
  * ============================================================ */
 @Composable
 private fun ThemeSettingsPage(
     themePrefs: ThemePrefs,
-    onThemeChanged: (Long, Long) -> Unit,
+    onThemeChanged: (Long, Long, Long) -> Unit,
     onBack: () -> Unit
 ) {
     // 局部狀態，用於即時反饋，避免頻繁寫入 DataStore 導致卡頓
     var localBg by remember(themePrefs.backgroundColor) { mutableLongStateOf(themePrefs.backgroundColor) }
     var localAccent by remember(themePrefs.accentColor) { mutableLongStateOf(themePrefs.accentColor) }
+    var localText by remember(themePrefs.textColor) { mutableLongStateOf(themePrefs.textColor) }
 
     // 防抖：停止拖動 200ms 後才保存
-    LaunchedEffect(localBg, localAccent) {
+    LaunchedEffect(localBg, localAccent, localText) {
         delay(200)
-        if (localBg != themePrefs.backgroundColor || localAccent != themePrefs.accentColor) {
-            onThemeChanged(localBg, localAccent)
+        if (localBg != themePrefs.backgroundColor || 
+            localAccent != themePrefs.accentColor ||
+            localText != themePrefs.textColor) {
+            onThemeChanged(localBg, localAccent, localText)
         }
     }
 
@@ -1680,8 +1684,18 @@ private fun ThemeSettingsPage(
 
         Spacer(Modifier.height(32.dp))
 
+        // ================= 文字顏色 =================
+        Text("文字顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(16.dp))
+        HsvColorPicker(
+            initialColor = Color(localText),
+            onColorChange = { localText = it.toArgb().toLong() and 0xFFFFFFFFL }
+        )
+
+        Spacer(Modifier.height(32.dp))
+
         // ================= 預覽 =================
-        Text("預覽", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        Text("預覽", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
         Box(
             Modifier
@@ -1690,6 +1704,7 @@ private fun ThemeSettingsPage(
                 .background(Color(localBg), RoundedCornerShape(12.dp))
         ) {
             val previewAccent = Color(localAccent)
+            val previewText = Color(localText)
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -1711,12 +1726,12 @@ private fun ThemeSettingsPage(
                 Column {
                     Text(
                         "正在播放的歌曲",
-                        color = previewAccent,
+                        color = previewText,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         "演出者",
-                        color = previewAccent.copy(alpha = 0.85f),
+                        color = previewText.copy(alpha = 0.7f),
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -1726,7 +1741,7 @@ private fun ThemeSettingsPage(
         Spacer(Modifier.height(16.dp))
         Text(
             "提示：預設背景僅在未設定背景圖片時顯示。",
-            color = Color.Gray,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
             style = MaterialTheme.typography.bodySmall
         )
     }
