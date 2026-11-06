@@ -207,9 +207,7 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                AppRoot()
-            }
+            AppRoot()
         }
 
         requestNotifPermissionIfNeeded()
@@ -254,24 +252,54 @@ private fun rememberMediaController(context: Context): MediaController? {
 }
 
 /* ============================================================
- * 根 UI
+ * 根 UI（動態主題封裝）
  * ============================================================ */
 @Composable
 fun AppRoot() {
     val context = LocalContext.current
+    val themeFlow = remember(context) { context.themeFlow() }
+    val themePrefs by themeFlow.collectAsState(initial = ThemePrefs())
+
+    val bgColor = Color(themePrefs.backgroundColor)
+    val accent = Color(themePrefs.accentColor)
+    
+    // 如果背景是純黑，讓對話框的底色稍微亮一點，避免融合看不清
+    val surfaceColor = if (bgColor == Color.Black) Color(0xFF1E1E1E) else bgColor
+
+    // 自定義 Material 顏色方案，強制所有內建組件（按鈕、滑桿、開關）使用主題色
+    val customColorScheme = darkColorScheme(
+        primary = accent,
+        onPrimary = Color.White,
+        primaryContainer = accent.copy(alpha = 0.2f),
+        onPrimaryContainer = accent,
+        secondary = accent,
+        background = bgColor,
+        onBackground = Color.White,
+        surface = surfaceColor,
+        onSurface = Color.White,
+        surfaceVariant = surfaceColor,
+        onSurfaceVariant = Color.LightGray
+    )
+
+    MaterialTheme(colorScheme = customColorScheme) {
+        AppContent(themePrefs)
+    }
+}
+
+@Composable
+fun AppContent(themePrefs: ThemePrefs) {
+    val context = LocalContext.current
     val controller = rememberMediaController(context)
     val scope = rememberCoroutineScope()
+
+    val bgColor = MaterialTheme.colorScheme.background
+    val accent = MaterialTheme.colorScheme.primary
 
     // 持久化資料
     val songsFlow = remember(context) { context.songsFlow() }
     val playlistsFlow = remember(context) { context.playlistsFlow() }
-    val themeFlow = remember(context) { context.themeFlow() }
     val songs by songsFlow.collectAsState(initial = emptyList())
     val playlists by playlistsFlow.collectAsState(initial = emptyList())
-    val themePrefs by themeFlow.collectAsState(initial = ThemePrefs())
-
-    val accent = Color(themePrefs.accentColor)
-    val bgColor = Color(themePrefs.backgroundColor)
 
     // 供 Player.Listener 讀取最新值
     val songsState = rememberUpdatedState(songs)
@@ -553,7 +581,6 @@ fun AppRoot() {
                     scope.launch { context.saveBackground(uri?.toString(), blur) }
                 },
                 themePrefs = themePrefs,
-                accentColor = accent,
                 onThemeChanged = { bg, ac ->
                     scope.launch { context.saveTheme(bg, ac) }
                 },
@@ -569,7 +596,6 @@ fun AppRoot() {
                             currentPlayingUri = currentSong?.uriString,
                             currentSourcePlaylist = currentSourcePlaylist,
                             isPlaying = isPlaying,
-                            accentColor = themePrefs.accentColor,
                             onOpenAllSongs = { viewMode = ViewMode.AllSongs },
                             onOpenPlaylist = { pl -> viewMode = ViewMode.Custom(pl.name) },
                             onDeletePlaylist = { pl -> playlistToDelete = pl },
@@ -584,7 +610,6 @@ fun AppRoot() {
                             currentPlayingUri = currentSong?.uriString,
                             isAllSongs = true,
                             isPlaying = isPlaying,
-                            accentColor = themePrefs.accentColor,
                             onBack = { viewMode = ViewMode.Home },
                             onSongClick = { song ->
                                 val idx = songs.indexOf(song).coerceAtLeast(0)
@@ -602,7 +627,6 @@ fun AppRoot() {
                                     currentPlayingUri = currentSong?.uriString,
                                     isAllSongs = false,
                                     isPlaying = isPlaying,
-                                    accentColor = themePrefs.accentColor,
                                     onBack = { viewMode = ViewMode.Home },
                                     onSongClick = { song ->
                                         val idx = pl.songs.indexOf(song).coerceAtLeast(0)
@@ -626,8 +650,6 @@ fun AppRoot() {
                     durationMs = durationMs,
                     isDragging = isDragging,
                     dragMs = dragMs,
-                    backgroundColor = themePrefs.backgroundColor,
-                    accentColor = themePrefs.accentColor,
                     onDragChange = { v ->
                         isDragging = true
                         dragMs = v
@@ -780,7 +802,6 @@ private fun PlaylistListContent(
     currentPlayingUri: String?,
     currentSourcePlaylist: String?,
     isPlaying: Boolean,
-    accentColor: Long,
     onOpenAllSongs: () -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist) -> Unit,
@@ -789,27 +810,27 @@ private fun PlaylistListContent(
     onOpenSettings: () -> Unit
 ) {
     var showAddMenu by remember { mutableStateOf(false) }
-    val accent = Color(accentColor)
+    val accent = MaterialTheme.colorScheme.primary
 
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "TuneMate",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(Modifier.weight(1f))
 
             Box {
                 IconButton(onClick = { showAddMenu = true }) {
-                    Icon(Icons.Default.Add, "新增", tint = Color.White)
+                    Icon(Icons.Default.Add, "新增", tint = accent)
                 }
                 DropdownMenu(
                     expanded = showAddMenu,
                     onDismissRequest = { showAddMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("匯入音頻", color = Color.White) },
+                        text = { Text("匯入音頻") },
                         leadingIcon = {
                             Icon(
                                 Icons.Default.MusicNote,
@@ -823,7 +844,7 @@ private fun PlaylistListContent(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("建立歌單", color = Color.White) },
+                        text = { Text("建立歌單") },
                         leadingIcon = {
                             Icon(
                                 Icons.Default.QueueMusic,
@@ -840,13 +861,14 @@ private fun PlaylistListContent(
             }
 
             IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Default.Settings, "設置", tint = Color.White)
+                Icon(Icons.Default.Settings, "設置", tint = accent)
             }
         }
 
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(Modifier.weight(1f)) {
+            // 「所有歌曲」：只有從「所有歌曲」隊列播放時才標記
             item {
                 val isSource = currentPlayingUri != null && currentSourcePlaylist == null
                 PlaylistRow(
@@ -855,12 +877,12 @@ private fun PlaylistListContent(
                     subtitle = "${songs.size} 首",
                     isHighlighted = isSource,
                     isAnimating = isSource && isPlaying,
-                    accentColor = accentColor,
                     onClick = onOpenAllSongs,
                     onDelete = null
                 )
             }
 
+            // 自訂歌單：只有「當前播放來源」的這個歌單才標記
             items(playlists) { pl ->
                 val isSource = currentPlayingUri != null && currentSourcePlaylist == pl.name
                 PlaylistRow(
@@ -869,7 +891,6 @@ private fun PlaylistListContent(
                     subtitle = "${pl.songs.size} 首",
                     isHighlighted = isSource,
                     isAnimating = isSource && isPlaying,
-                    accentColor = accentColor,
                     onClick = { onOpenPlaylist(pl) },
                     onDelete = { onDeletePlaylist(pl) }
                 )
@@ -888,11 +909,11 @@ private fun PlaylistRow(
     subtitle: String,
     isHighlighted: Boolean,
     isAnimating: Boolean,
-    accentColor: Long,
     onClick: () -> Unit,
     onDelete: (() -> Unit)?
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val accent = MaterialTheme.colorScheme.primary
 
     val breath = remember { Animatable(0f) }
     LaunchedEffect(isAnimating) {
@@ -904,7 +925,6 @@ private fun PlaylistRow(
         }
     }
 
-    val accent = Color(accentColor)
     val shape = RoundedCornerShape(12.dp)
     val b = breath.value
 
@@ -934,7 +954,7 @@ private fun PlaylistRow(
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
-                color = if (isHighlighted) accent else Color.White,
+                color = if (isHighlighted) accent else MaterialTheme.colorScheme.onBackground,
                 fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -942,7 +962,8 @@ private fun PlaylistRow(
             Text(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isHighlighted) accent.copy(alpha = subAlpha) else Color.Gray
+                color = if (isHighlighted) accent.copy(alpha = subAlpha) 
+                        else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
             )
         }
 
@@ -952,7 +973,7 @@ private fun PlaylistRow(
                     Icon(
                         Icons.Default.MoreVert,
                         contentDescription = "更多",
-                        tint = Color.LightGray
+                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                     )
                 }
                 DropdownMenu(
@@ -960,7 +981,7 @@ private fun PlaylistRow(
                     onDismissRequest = { menuOpen = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("刪除歌單", color = Color.White) },
+                        text = { Text("刪除歌單") },
                         onClick = {
                             menuOpen = false
                             onDelete()
@@ -972,11 +993,11 @@ private fun PlaylistRow(
             Icon(
                 Icons.Default.ChevronRight,
                 contentDescription = null,
-                tint = Color.Gray
+                tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
             )
         }
     }
-    HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
+    HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f))
 }
 
 /* ============================================================
@@ -989,7 +1010,6 @@ private fun SongListContent(
     currentPlayingUri: String?,
     isAllSongs: Boolean,
     isPlaying: Boolean,
-    accentColor: Long,
     onBack: () -> Unit,
     onSongClick: (Song) -> Unit,
     onRemove: (Song) -> Unit
@@ -997,25 +1017,25 @@ private fun SongListContent(
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+                Icon(Icons.Default.ArrowBack, "返回", tint = MaterialTheme.colorScheme.onBackground)
             }
             Text(
                 title,
                 style = MaterialTheme.typography.headlineSmall,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.weight(1f))
             Text(
                 "${songs.size} 首",
-                color = Color.LightGray,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.bodySmall
             )
         }
 
         Spacer(Modifier.height(8.dp))
-        HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+        HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.2f))
 
         if (songs.isEmpty()) {
             Box(
@@ -1025,7 +1045,7 @@ private fun SongListContent(
                 Text(
                     if (isAllSongs) "尚未匯入任何歌曲。\n使用右上角「＋」→「匯入音頻」。"
                     else "此歌單尚無歌曲。",
-                    color = Color.Gray,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -1038,7 +1058,6 @@ private fun SongListContent(
                         song = song,
                         isHighlighted = isCurrent,
                         isAnimating = isCurrent && isPlaying,
-                        accentColor = accentColor,
                         onClick = { onSongClick(song) },
                         onRemove = { onRemove(song) }
                     )
@@ -1056,11 +1075,11 @@ private fun SongRow(
     song: Song,
     isHighlighted: Boolean,
     isAnimating: Boolean,
-    accentColor: Long,
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val accent = MaterialTheme.colorScheme.primary
 
     val breath = remember { Animatable(0f) }
     LaunchedEffect(isAnimating) {
@@ -1072,7 +1091,6 @@ private fun SongRow(
         }
     }
 
-    val accent = Color(accentColor)
     val shape = RoundedCornerShape(12.dp)
     val b = breath.value
 
@@ -1101,14 +1119,15 @@ private fun SongRow(
         Column(Modifier.weight(1f)) {
             Text(
                 song.title,
-                color = if (isHighlighted) accent else Color.White,
+                color = if (isHighlighted) accent else MaterialTheme.colorScheme.onBackground,
                 fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 song.artist,
-                color = if (isHighlighted) accent.copy(alpha = subAlpha) else Color.Gray,
+                color = if (isHighlighted) accent.copy(alpha = subAlpha) 
+                        else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -1120,7 +1139,7 @@ private fun SongRow(
                 Icon(
                     Icons.Default.MoreVert,
                     contentDescription = "更多",
-                    tint = Color.LightGray
+                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                 )
             }
             DropdownMenu(
@@ -1128,7 +1147,7 @@ private fun SongRow(
                 onDismissRequest = { menuOpen = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("從歌單移除", color = Color.White) },
+                    text = { Text("從歌單移除") },
                     onClick = {
                         menuOpen = false
                         onRemove()
@@ -1137,7 +1156,7 @@ private fun SongRow(
             }
         }
     }
-    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+    HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f))
 }
 
 /* ============================================================
@@ -1153,23 +1172,23 @@ private fun BottomPlayerBar(
     durationMs: Long,
     isDragging: Boolean,
     dragMs: Float,
-    backgroundColor: Long,
-    accentColor: Long,
     onDragChange: (Float) -> Unit,
     onDragFinish: () -> Unit,
     onCyclePlayMode: () -> Unit
 ) {
-    val accent = Color(accentColor)
+    val accent = MaterialTheme.colorScheme.primary
+    val onBg = MaterialTheme.colorScheme.onBackground
+
     Column(
         Modifier
             .fillMaxWidth()
-            .background(Color(backgroundColor).copy(alpha = 0.92f))
+            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f))
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Text(
             text = currentSong?.let { "正在播放：${it.title}" } ?: "尚未播放",
-            color = if (currentSong != null) Color.White else Color.Gray,
+            color = if (currentSong != null) onBg else onBg.copy(alpha = 0.5f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodyMedium
@@ -1193,12 +1212,12 @@ private fun BottomPlayerBar(
         ) {
             Text(
                 formatMs(if (isDragging) dragMs.toLong() else positionMs),
-                color = Color.LightGray,
+                color = onBg.copy(alpha = 0.7f),
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
                 formatMs(durationMs),
-                color = Color.LightGray,
+                color = onBg.copy(alpha = 0.7f),
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -1214,7 +1233,7 @@ private fun BottomPlayerBar(
                 Icon(
                     Icons.Default.SkipPrevious,
                     "上一首",
-                    tint = Color.White,
+                    tint = onBg,
                     modifier = Modifier.size(32.dp)
                 )
             }
@@ -1225,7 +1244,7 @@ private fun BottomPlayerBar(
                 Icon(
                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     "播放/暫停",
-                    tint = Color.White,
+                    tint = onBg,
                     modifier = Modifier.size(44.dp)
                 )
             }
@@ -1236,7 +1255,7 @@ private fun BottomPlayerBar(
                 Icon(
                     Icons.Default.SkipNext,
                     "下一首",
-                    tint = Color.White,
+                    tint = onBg,
                     modifier = Modifier.size(32.dp)
                 )
             }
@@ -1247,7 +1266,7 @@ private fun BottomPlayerBar(
                     PlayMode.REPEAT_ALL -> Icons.Default.Repeat to "歌單循環"
                     PlayMode.PLAY_ONCE -> Icons.Default.Repeat to "只播一次"
                 }
-                val tint = if (playMode == PlayMode.PLAY_ONCE) Color.Gray else accent
+                val tint = if (playMode == PlayMode.PLAY_ONCE) onBg.copy(alpha = 0.5f) else accent
                 Icon(
                     icon,
                     label,
@@ -1312,7 +1331,7 @@ private fun CreatePlaylistDialog(
                                 )
                                 Text(
                                     song.title,
-                                    color = Color.White,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -1418,7 +1437,6 @@ fun SettingsScreen(
     blurRadius: Float,
     onBackgroundChanged: (Uri?, Float) -> Unit,
     themePrefs: ThemePrefs,
-    accentColor: Color,
     onThemeChanged: (Long, Long) -> Unit,
     onBack: () -> Unit
 ) {
@@ -1431,7 +1449,6 @@ fun SettingsScreen(
 
     when (subPage) {
         SettingsSubPage.MAIN -> SettingsMainPage(
-            accentColor = accentColor,
             onOpenBackground = { subPage = SettingsSubPage.BACKGROUND },
             onOpenTheme = { subPage = SettingsSubPage.THEME },
             onOpenEqualizer = { subPage = SettingsSubPage.EQUALIZER },
@@ -1445,7 +1462,6 @@ fun SettingsScreen(
         )
         SettingsSubPage.THEME -> ThemeSettingsPage(
             themePrefs = themePrefs,
-            accentColor = accentColor,
             onThemeChanged = onThemeChanged,
             onBack = { subPage = SettingsSubPage.MAIN }
         )
@@ -1457,7 +1473,6 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingsMainPage(
-    accentColor: Color,
     onOpenBackground: () -> Unit,
     onOpenTheme: () -> Unit,
     onOpenEqualizer: () -> Unit,
@@ -1466,12 +1481,12 @@ private fun SettingsMainPage(
     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+                Icon(Icons.Default.ArrowBack, "返回", tint = MaterialTheme.colorScheme.onBackground)
             }
             Text(
                 "設置",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
         }
 
@@ -1481,21 +1496,18 @@ private fun SettingsMainPage(
             icon = Icons.Default.Image,
             title = "背景設定",
             subtitle = "更換背景圖片、調整模糊度",
-            accentColor = accentColor,
             onClick = onOpenBackground
         )
         SettingsEntry(
             icon = Icons.Default.Palette,
             title = "主題",
             subtitle = "設定預設背景顏色和特效顏色",
-            accentColor = accentColor,
             onClick = onOpenTheme
         )
         SettingsEntry(
             icon = Icons.Default.Equalizer,
             title = "均衡器",
             subtitle = "調整低音、中音、高音",
-            accentColor = accentColor,
             onClick = onOpenEqualizer
         )
     }
@@ -1506,7 +1518,6 @@ private fun SettingsEntry(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    accentColor: Color,
     onClick: () -> Unit
 ) {
     Row(
@@ -1519,17 +1530,17 @@ private fun SettingsEntry(
         Icon(
             icon,
             contentDescription = null,
-            tint = accentColor,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(28.dp)
         )
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White)
+            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
         }
         Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
     }
-    HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
+    HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f))
 }
 
 @Composable
@@ -1568,12 +1579,12 @@ private fun BackgroundSettingsPage(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+                Icon(Icons.Default.ArrowBack, "返回", tint = MaterialTheme.colorScheme.onBackground)
             }
             Text(
                 "背景設定",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
         }
 
@@ -1599,7 +1610,7 @@ private fun BackgroundSettingsPage(
 
         Spacer(Modifier.height(24.dp))
 
-        Text("背景模糊 ${pendingBlur.toInt()} dp", color = Color.White)
+        Text("背景模糊 ${pendingBlur.toInt()} dp", color = MaterialTheme.colorScheme.onBackground)
         Slider(
             value = pendingBlur,
             onValueChange = { pendingBlur = it },
@@ -1611,13 +1622,13 @@ private fun BackgroundSettingsPage(
 
         Spacer(Modifier.height(24.dp))
 
-        Text("預覽", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+        Text("預覽", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(180.dp)
-                .background(Color(0xFF1A1A2E)),
+                .background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
             if (backgroundUri != null) {
@@ -1637,7 +1648,6 @@ private fun BackgroundSettingsPage(
 @Composable
 private fun ThemeSettingsPage(
     themePrefs: ThemePrefs,
-    accentColor: Color,
     onThemeChanged: (Long, Long) -> Unit,
     onBack: () -> Unit
 ) {
@@ -1666,19 +1676,19 @@ private fun ThemeSettingsPage(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+                Icon(Icons.Default.ArrowBack, "返回", tint = MaterialTheme.colorScheme.onBackground)
             }
             Text(
                 "主題",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
         }
 
         Spacer(Modifier.height(24.dp))
 
         // 預設背景顏色
-        Text("預設背景顏色", color = Color.White, fontWeight = FontWeight.Bold)
+        Text("預設背景顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
         ColorRow(
             colors = PRESET_BG_COLORS.take(5),
@@ -1695,7 +1705,7 @@ private fun ThemeSettingsPage(
         Spacer(Modifier.height(24.dp))
 
         // 呼吸發光特效顏色
-        Text("呼吸發光特效顏色", color = Color.White, fontWeight = FontWeight.Bold)
+        Text("呼吸發光特效顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
         ColorRow(
             colors = PRESET_ACCENT_COLORS.take(5),
@@ -1712,7 +1722,7 @@ private fun ThemeSettingsPage(
         Spacer(Modifier.height(28.dp))
 
         // 即時預覽
-        Text("預覽", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+        Text("預覽", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
         Box(
             Modifier
@@ -1781,8 +1791,8 @@ private fun ColorRow(
                     .background(Color(c))
                     .border(
                         width = if (c == selected) 3.dp else 1.dp,
-                        color = if (c == selected) Color.White
-                        else Color.White.copy(alpha = 0.3f),
+                        color = if (c == selected) MaterialTheme.colorScheme.onBackground
+                        else Color.Gray.copy(alpha = 0.5f),
                         shape = CircleShape
                     )
                     .clickable { onSelect(c) }
@@ -1802,12 +1812,12 @@ private fun EqualizerSettingsPage(onBack: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, "返回", tint = Color.White)
+                Icon(Icons.Default.ArrowBack, "返回", tint = MaterialTheme.colorScheme.onBackground)
             }
             Text(
                 "均衡器",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
         }
         Spacer(Modifier.height(16.dp))
