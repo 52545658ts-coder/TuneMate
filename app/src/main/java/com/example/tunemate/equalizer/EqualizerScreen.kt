@@ -76,8 +76,13 @@ fun EqualizerScreen() {
     // ---------- 音量增幅器 state ----------
     val booster = EqualizerHolder.loudnessEnhancer
 
-    // 用明確方法呼叫 + 明確變量類型，避免平台類型推導歧義
-    val initialGain: Int = if (booster != null) booster.getTargetGain() else 0
+    // 關鍵：明確轉成 Number 再 toInt()，避免交集類型推導歧義
+    val initialGain: Int = if (booster != null) {
+        val raw: Number = booster.getTargetGain()
+        raw.toInt()
+    } else {
+        0
+    }
     val clampedInitialGain: Int = when {
         initialGain < 0 -> 0
         initialGain > MAX_BOOSTER_GAIN_MB -> MAX_BOOSTER_GAIN_MB
