@@ -81,7 +81,11 @@ fun Context.backgroundFlow(): Flow<BackgroundPrefs> = dataStore.data.map { prefs
 
 suspend fun Context.saveBackgroundImage(sourceUri: Uri): Uri? = withContext(Dispatchers.IO) {
     try {
-        val target = File(filesDir, "background.jpg")
+        // 1. 刪除所有舊的背景圖片，避免佔用儲存空間
+        filesDir.listFiles()?.filter { it.name.startsWith("background_") || it.name == "background.jpg" }?.forEach { it.delete() }
+        
+        // 2. 使用時間戳作為新檔名，確保每次的 URI 都不一樣，強制刷新圖片
+        val target = File(filesDir, "background_${System.currentTimeMillis()}.jpg")
         contentResolver.openInputStream(sourceUri)?.use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
         }
