@@ -640,8 +640,9 @@ fun AppContent(themePrefs: ThemePrefs) {
                     }
                 }
 
-                // 讓底部播放條在有背景時也有稍微透明的效果
-                val barBg = if (backgroundUri != null) Color.Black.copy(alpha = (1f - brightness) + 0.3f).coerceAtMost(1f) else MaterialTheme.colorScheme.background
+                // 讓底部播放條在有背景時也有稍微透明的效果（修復括號位置）
+                val barAlpha = ((1f - brightness) + 0.3f).coerceIn(0f, 1f)
+                val barBg = if (backgroundUri != null) Color.Black.copy(alpha = barAlpha) else MaterialTheme.colorScheme.background
                 BottomPlayerBar(
                     player = controller,
                     currentSong = currentSong,
