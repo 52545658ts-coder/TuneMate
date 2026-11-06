@@ -300,6 +300,7 @@ fun AppContent(themePrefs: ThemePrefs) {
     // 背景
     var backgroundUri by remember { mutableStateOf<Uri?>(null) }
     var blurRadius by remember { mutableFloatStateOf(12f) }
+    var brightness by remember { mutableFloatStateOf(0.7f) }
 
     // 對話框
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -353,6 +354,7 @@ fun AppContent(themePrefs: ThemePrefs) {
         val prefs = context.backgroundFlow().first()
         backgroundUri = prefs.uri?.let { Uri.parse(it) }
         blurRadius = prefs.blur
+        brightness = prefs.brightness
     }
 
     // 正在查看的歌單被刪除後自動回首頁
@@ -546,7 +548,7 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
     }
 
-    // ---------- 主體（全局背景修復：遮罩改為黑色半透明，透出背景圖） ----------
+    // ---------- 主體（全局背景修復） ----------
     Box(Modifier.fillMaxSize()) {
         // 1. 全局背景層
         if (backgroundUri != null) {
@@ -556,8 +558,10 @@ fun AppContent(themePrefs: ThemePrefs) {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().blur(blurRadius.dp)
             )
-            // 使用低透明度的黑色遮罩，保證亮色文字清晰，同時讓背景圖透出來
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
+            // 使用自訂明亮度來控制遮罩的黑度 (1f - brightness)
+            // 亮度為 100% 時遮罩全透明，亮度為 0% 時遮罩全黑
+            val maskAlpha = 1f - brightness
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = maskAlpha)))
         } else {
             // 若無背景圖，套用主題顏色
             Box(Modifier.fillMaxSize().background(bgColor))
@@ -568,10 +572,12 @@ fun AppContent(themePrefs: ThemePrefs) {
             SettingsScreen(
                 backgroundUri = backgroundUri,
                 blurRadius = blurRadius,
-                onBackgroundChanged = { uri, blur ->
+                brightness = brightness,
+                onBackgroundChanged = { uri, blur, bright ->
                     backgroundUri = uri
                     blurRadius = blur
-                    scope.launch { context.saveBackground(uri?.toString(), blur) }
+                    brightness = bright
+                    scope.launch { context.saveBackground(uri?.toString(), blur, bright) }
                 },
                 themePrefs = themePrefs,
                 onThemeChanged = { bg, ac, tx ->
@@ -634,8 +640,8 @@ fun AppContent(themePrefs: ThemePrefs) {
                     }
                 }
 
-                // 讓底部播放條在有背景時也有稍微透明的效果（可選）
-                val barBg = if (backgroundUri != null) Color.Black.copy(alpha = 0.6f) else MaterialTheme.colorScheme.background
+                // 讓底部播放條在有背景時也有稍微透明的效果
+                val barBg = if (backgroundUri != null) Color.Black.copy(alpha = (1f - brightness) + 0.3f).coerceAtMost(1f) else MaterialTheme.colorScheme.background
                 BottomPlayerBar(
                     player = controller,
                     currentSong = currentSong,
@@ -1154,7 +1160,7 @@ private fun SongRow(
 }
 
 /* ============================================================
- * 底部播放控制條（加入自定義背景參數）
+ * 底部播放控制條
  * ============================================================ */
 @Composable
 private fun BottomPlayerBar(
@@ -1430,7 +1436,8 @@ private enum class SettingsSubPage { MAIN, BACKGROUND, THEME, EQUALIZER }
 fun SettingsScreen(
     backgroundUri: Uri?,
     blurRadius: Float,
-    onBackgroundChanged: (Uri?, Float) -> Unit,
+    brightness: Float,
+    onBackgroundChanged: (Uri?, Float, Float) -> Unit,
     themePrefs: ThemePrefs,
     onThemeChanged: (Long, Long, Long) -> Unit,
     onBack: () -> Unit
@@ -1452,6 +1459,7 @@ fun SettingsScreen(
         SettingsSubPage.BACKGROUND -> BackgroundSettingsPage(
             backgroundUri = backgroundUri,
             blurRadius = blurRadius,
+            brightness = brightness,
             onBackgroundChanged = onBackgroundChanged,
             onBack = { subPage = SettingsSubPage.MAIN }
         )
@@ -1490,7 +1498,7 @@ private fun SettingsMainPage(
         SettingsEntry(
             icon = Icons.Default.Image,
             title = "背景設定",
-            subtitle = "更換背景圖片、調整模糊度",
+            subtitle = "更換背景圖片、調整模糊度與亮度",
             onClick = onOpenBackground
         )
         SettingsEntry(
@@ -1542,12 +1550,14 @@ private fun SettingsEntry(
 private fun BackgroundSettingsPage(
     backgroundUri: Uri?,
     blurRadius: Float,
-    onBackgroundChanged: (Uri?, Float) -> Unit,
+    brightness: Float,
+    onBackgroundChanged: (Uri?, Float, Float) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingBlur by remember(blurRadius) { mutableFloatStateOf(blurRadius) }
+    var pendingBrightness by remember(brightness) { mutableFloatStateOf(brightness) }
     var saving by remember { mutableStateOf(false) }
 
     val imagePicker = rememberLauncherForActivityResult(
@@ -1558,7 +1568,7 @@ private fun BackgroundSettingsPage(
             scope.launch {
                 val saved = context.saveBackgroundImage(uri)
                 if (saved != null) {
-                    onBackgroundChanged(saved, pendingBlur)
+                    onBackgroundChanged(saved, pendingBlur, pendingBrightness)
                 }
                 saving = false
             }
@@ -1597,7 +1607,7 @@ private fun BackgroundSettingsPage(
 
             if (backgroundUri != null) {
                 Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = { onBackgroundChanged(null, pendingBlur) }) {
+                OutlinedButton(onClick = { onBackgroundChanged(null, pendingBlur, pendingBrightness) }) {
                     Text("清除背景")
                 }
             }
@@ -1605,14 +1615,28 @@ private fun BackgroundSettingsPage(
 
         Spacer(Modifier.height(24.dp))
 
+        // 背景模糊滑桿
         Text("背景模糊 ${pendingBlur.toInt()} dp", color = MaterialTheme.colorScheme.onBackground)
         Slider(
             value = pendingBlur,
             onValueChange = { pendingBlur = it },
             onValueChangeFinished = {
-                onBackgroundChanged(backgroundUri, pendingBlur)
+                onBackgroundChanged(backgroundUri, pendingBlur, pendingBrightness)
             },
             valueRange = 0f..25f
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        // 明亮度滑桿
+        Text("明亮度 ${(pendingBrightness * 100).toInt()}%", color = MaterialTheme.colorScheme.onBackground)
+        Slider(
+            value = pendingBrightness,
+            onValueChange = { pendingBrightness = it },
+            onValueChangeFinished = {
+                onBackgroundChanged(backgroundUri, pendingBlur, pendingBrightness)
+            },
+            valueRange = 0f..1f
         )
 
         Spacer(Modifier.height(24.dp))
@@ -1633,6 +1657,9 @@ private fun BackgroundSettingsPage(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().blur(pendingBlur.dp)
                 )
+                // 預覽區塊也套用遮罩
+                val maskAlpha = 1f - pendingBrightness
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = maskAlpha)))
             } else {
                 Text("使用預設漸層背景", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
             }
@@ -1641,7 +1668,7 @@ private fun BackgroundSettingsPage(
 }
 
 /* ============================================================
- * 主題設定頁面（獨立預覽區，不受全局背景干擾）
+ * 主題設定頁面
  * ============================================================ */
 @Composable
 private fun ThemeSettingsPage(
