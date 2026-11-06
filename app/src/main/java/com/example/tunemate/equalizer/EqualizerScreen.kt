@@ -41,6 +41,8 @@ private const val MAX_BOOSTER_GAIN_MB: Int = 1500
 @Composable
 fun EqualizerScreen() {
     val eq = EqualizerHolder.equalizer
+    val accentColor = MaterialTheme.colorScheme.primary
+    val onBg = MaterialTheme.colorScheme.onBackground
 
     if (eq == null) {
         Column(
@@ -50,12 +52,12 @@ fun EqualizerScreen() {
             Text(
                 "均衡器",
                 style = MaterialTheme.typography.titleLarge,
-                color = Color(0xFF4FC3F7)
+                color = accentColor
             )
             Spacer(Modifier.height(12.dp))
             Text(
                 "均衡器會在音樂開始播放後自動啟用。\n請先回到播放器播放一首歌，再回來調整。",
-                color = Color.LightGray,
+                color = onBg.copy(alpha = 0.7f),
                 style = MaterialTheme.typography.bodyMedium
             )
         }
@@ -96,7 +98,7 @@ fun EqualizerScreen() {
             Text(
                 "均衡器",
                 style = MaterialTheme.typography.titleLarge,
-                color = Color(0xFF4FC3F7)
+                color = accentColor
             )
             Spacer(Modifier.weight(1f))
             Switch(
@@ -115,14 +117,13 @@ fun EqualizerScreen() {
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("低音", color = Color(0xFF4FC3F7), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+            Text("低音", color = accentColor, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
             Text("中音", color = Color(0xFF81C784), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
             Text("高音", color = Color(0xFFFFB74D), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
         }
-        HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+        HorizontalDivider(color = onBg.copy(alpha = 0.2f))
         
         // ============ 垂直滑桿區塊 ============
-        // 設定固定高度 450dp，確保在任何螢幕上都有足夠的垂直空間讓滑桿拉長
         Row(
             Modifier
                 .fillMaxWidth()
@@ -144,13 +145,13 @@ fun EqualizerScreen() {
                     // 頂部數值
                     Text(
                         text = "%+.0f".format(level.toFloat() / 100f),
-                        color = Color.LightGray,
+                        color = onBg.copy(alpha = 0.8f),
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(12.dp))
                     
-                    // 垂直滑桿 (佔用中間所有剩餘高度)
+                    // 垂直滑桿
                     VerticalBandSlider(
                         level = level,
                         minLevel = minLevel,
@@ -166,7 +167,7 @@ fun EqualizerScreen() {
                     // 底部頻率
                     Text(
                         text = formatHz(centerHz),
-                        color = bandColor(centerHz),
+                        color = bandColor(centerHz, accentColor),
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center
@@ -184,20 +185,20 @@ fun EqualizerScreen() {
 
         // ============ 音量增幅器 ============
         Spacer(Modifier.height(20.dp))
-        HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+        HorizontalDivider(color = onBg.copy(alpha = 0.2f))
         Spacer(Modifier.height(16.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "音量增幅",
                 style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFF4FC3F7)
+                color = accentColor
             )
             Spacer(Modifier.weight(1f))
             Text(
                 text = if (booster == null) "未啟用"
                 else "%+.1f dB".format(boosterGain.toFloat() / 100f),
-                color = if (booster == null) Color.Gray else Color.White,
+                color = if (booster == null) Color.Gray else onBg,
                 fontWeight = FontWeight.SemiBold
             )
         }
@@ -206,7 +207,7 @@ fun EqualizerScreen() {
         if (booster == null) {
             Text(
                 "音量增幅器會在音樂開始播放後自動啟用。",
-                color = Color.LightGray,
+                color = onBg.copy(alpha = 0.7f),
                 style = MaterialTheme.typography.bodySmall
             )
         } else {
@@ -232,8 +233,8 @@ fun EqualizerScreen() {
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("0 dB", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
-                Text("%.1f dB".format(MAX_BOOSTER_GAIN_MB.toFloat() / 100f), color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                Text("0 dB", color = onBg.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
+                Text("%.1f dB".format(MAX_BOOSTER_GAIN_MB.toFloat() / 100f), color = onBg.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
             }
 
             Spacer(Modifier.height(6.dp))
@@ -245,10 +246,10 @@ fun EqualizerScreen() {
 
         // ============ 預設音效 ============
         Spacer(Modifier.height(20.dp))
-        HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+        HorizontalDivider(color = onBg.copy(alpha = 0.2f))
         Spacer(Modifier.height(16.dp))
 
-        Text("預設音效", color = Color.White, fontWeight = FontWeight.Bold)
+        Text("預設音效", color = onBg, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
 
         val presetCount: Int = eq.numberOfPresets.toInt()
@@ -280,15 +281,14 @@ fun EqualizerScreen() {
                         }
                     }
                 )
-                Text(name, color = Color.White)
+                Text(name, color = onBg)
             }
         }
     }
 }
 
 /* ============================================================
- * 完美的垂直滑桿：透過 Layout 交換寬高限制，
- * 確保它不僅視覺上旋轉，在佈局中也真正佔據了垂直高度。
+ * 完美的垂直滑桿：透過 Layout 交換寬高限制
  * ============================================================ */
 @Composable
 private fun VerticalBandSlider(
@@ -308,7 +308,6 @@ private fun VerticalBandSlider(
             valueRange = minLevel.toFloat()..maxLevel.toFloat(),
             modifier = Modifier
                 .layout { measurable, constraints ->
-                    // 關鍵：在測量時，強制將父容器給的「高度」當作寬度傳給 Slider
                     val placeable = measurable.measure(
                         Constraints(
                             minWidth = constraints.minHeight,
@@ -317,9 +316,7 @@ private fun VerticalBandSlider(
                             maxHeight = constraints.maxWidth
                         )
                     )
-                    // 告訴父佈局，這個元件佔用的真實寬高是交換後的
                     layout(placeable.height, placeable.width) {
-                        // 因為要圍繞中心旋轉，放置時需要進行偏移補償
                         placeable.place(
                             x = (placeable.height - placeable.width) / 2,
                             y = (placeable.width - placeable.height) / 2
@@ -333,10 +330,10 @@ private fun VerticalBandSlider(
     }
 }
 
-private fun bandColor(hz: Float): Color = when {
-    hz < 500f -> Color(0xFF4FC3F7)   // 低音
-    hz < 4000f -> Color(0xFF81C784)  // 中音
-    else -> Color(0xFFFFB74D)        // 高音
+private fun bandColor(hz: Float, accentColor: Color): Color = when {
+    hz < 500f -> accentColor            // 低音使用主題色
+    hz < 4000f -> Color(0xFF81C784)     // 中音保持綠色
+    else -> Color(0xFFFFB74D)           // 高音保持橙色
 }
 
 private fun formatHz(hz: Float): String =
