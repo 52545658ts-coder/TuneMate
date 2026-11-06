@@ -106,6 +106,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -139,7 +140,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -1791,15 +1791,16 @@ private fun GradientSlider(
     thumbColor: Color,
     onPositionChange: (Float) -> Unit
 ) {
+    val density = LocalDensity.current
+    val paddingPx = with(density) { 12.dp.toPx() }
+
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
             .height(40.dp)
     ) {
         val widthPx = constraints.maxWidth.toFloat()
-        val padding = 12.dp
-        val paddingPx = padding.value * density
-
+        
         Canvas(
             Modifier
                 .fillMaxSize()
