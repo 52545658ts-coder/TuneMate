@@ -166,35 +166,6 @@ private data class RemoveRequest(
 )
 
 /* ============================================================
- * 主題預設色盤
- * ============================================================ */
-private val PRESET_BG_COLORS = listOf(
-    0xFF0B0B1AL,  // 深藍黑（預設）
-    0xFF000000L,  // 純黑
-    0xFF1A1A2EL,  // 深藍紫
-    0xFF0F3460L,  // 深藍
-    0xFF1E1E1EL,  // 深灰
-    0xFF241B2FL,  // 深紫
-    0xFF0B1A1AL,  // 深青
-    0xFF1A0B0BL,  // 深紅
-    0xFF2D2D2DL,  // 中灰
-    0xFF2A1B0BL   // 深棕
-)
-
-private val PRESET_ACCENT_COLORS = listOf(
-    0xFF4FC3F7L,  // 天藍（預設）
-    0xFF81C784L,  // 綠
-    0xFFFFB74DL,  // 橙
-    0xFFE57373L,  // 紅
-    0xFFBA68C8L,  // 紫
-    0xFF4DD0E1L,  // 青
-    0xFFFFF176L,  // 黃
-    0xFFF06292L,  // 粉
-    0xFFA1887FL,  // 棕
-    0xFF90A4AEL   // 灰藍
-)
-
-/* ============================================================
  * Activity
  * ============================================================ */
 class MainActivity : ComponentActivity() {
@@ -873,7 +844,6 @@ private fun PlaylistListContent(
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(Modifier.weight(1f)) {
-            // 「所有歌曲」：只有從「所有歌曲」隊列播放時才標記
             item {
                 val isSource = currentPlayingUri != null && currentSourcePlaylist == null
                 PlaylistRow(
@@ -887,7 +857,6 @@ private fun PlaylistListContent(
                 )
             }
 
-            // 自訂歌單：只有「當前播放來源」的這個歌單才標記
             items(playlists) { pl ->
                 val isSource = currentPlayingUri != null && currentSourcePlaylist == pl.name
                 PlaylistRow(
@@ -1651,7 +1620,7 @@ private fun BackgroundSettingsPage(
 }
 
 /* ============================================================
- * 主題設定頁面（包含完美的 HSV 自定義滑桿與預設色塊）
+ * 主題設定頁面（完全移除圓盤，只保留滑桿）
  * ============================================================ */
 @Composable
 private fun ThemeSettingsPage(
@@ -1691,55 +1660,25 @@ private fun ThemeSettingsPage(
 
         Spacer(Modifier.height(24.dp))
 
-        // ================= 預設背景顏色 =================
-        Text("預設背景顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        ColorRow(
-            colors = PRESET_BG_COLORS.take(5),
-            selected = localBg,
-            onSelect = { localBg = it }
-        )
-        Spacer(Modifier.height(8.dp))
-        ColorRow(
-            colors = PRESET_BG_COLORS.drop(5),
-            selected = localBg,
-            onSelect = { localBg = it }
-        )
+        // ================= 背景顏色 =================
+        Text("背景顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
-        
-        // 自定義背景顏色滑桿
         HsvColorPicker(
-            title = "自定義背景色",
             initialColor = Color(localBg),
             onColorChange = { localBg = it.toArgb().toLong() and 0xFFFFFFFFL }
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
 
         // ================= 呼吸發光特效顏色 =================
         Text("呼吸發光特效顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        ColorRow(
-            colors = PRESET_ACCENT_COLORS.take(5),
-            selected = localAccent,
-            onSelect = { localAccent = it }
-        )
-        Spacer(Modifier.height(8.dp))
-        ColorRow(
-            colors = PRESET_ACCENT_COLORS.drop(5),
-            selected = localAccent,
-            onSelect = { localAccent = it }
-        )
         Spacer(Modifier.height(16.dp))
-
-        // 自定義特效顏色滑桿
         HsvColorPicker(
-            title = "自定義特效色",
             initialColor = Color(localAccent),
             onColorChange = { localAccent = it.toArgb().toLong() and 0xFFFFFFFFL }
         )
 
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(32.dp))
 
         // ================= 預覽 =================
         Text("預覽", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
@@ -1798,7 +1737,6 @@ private fun ThemeSettingsPage(
  * ============================================================ */
 @Composable
 private fun HsvColorPicker(
-    title: String,
     initialColor: Color,
     onColorChange: (Color) -> Unit
 ) {
@@ -1824,10 +1762,7 @@ private fun HsvColorPicker(
     var s by remember { mutableFloatStateOf(hsv[1]) }
     var v by remember { mutableFloatStateOf(hsv[2]) }
 
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Text(title, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(4.dp))
-
+    Column(Modifier.fillMaxWidth()) {
         // 1. Hue (色相) 彩虹滑桿
         GradientSlider(
             value = h,
@@ -1842,6 +1777,8 @@ private fun HsvColorPicker(
             valueRange = 0f..360f
         )
 
+        Spacer(Modifier.height(8.dp))
+
         // 2. Saturation (飽和度) 白到純色滑桿
         GradientSlider(
             value = s,
@@ -1852,6 +1789,8 @@ private fun HsvColorPicker(
             colors = listOf(Color.hsv(h, 0f, v), Color.hsv(h, 1f, v)),
             valueRange = 0f..1f
         )
+
+        Spacer(Modifier.height(8.dp))
 
         // 3. Value (明度) 黑到亮色滑桿
         GradientSlider(
@@ -1886,8 +1825,8 @@ private fun GradientSlider(
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(12.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .height(16.dp)
+                .clip(RoundedCornerShape(8.dp))
         ) {
             drawRect(brush = Brush.horizontalGradient(colors))
         }
@@ -1906,34 +1845,6 @@ private fun GradientSlider(
             ),
             modifier = Modifier.fillMaxWidth()
         )
-    }
-}
-
-@Composable
-private fun ColorRow(
-    colors: List<Long>,
-    selected: Long,
-    onSelect: (Long) -> Unit
-) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        colors.forEach { c ->
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(Color(c))
-                    .border(
-                        width = if (c == selected) 3.dp else 1.dp,
-                        color = if (c == selected) MaterialTheme.colorScheme.onBackground
-                        else Color.Gray.copy(alpha = 0.5f),
-                        shape = CircleShape
-                    )
-                    .clickable { onSelect(c) }
-            )
-        }
     }
 }
 
