@@ -23,6 +23,7 @@ private val PLAYLIST_KEY = stringPreferencesKey("playlists")
 private val SONGS_KEY = stringPreferencesKey("imported_songs")
 private val BG_URI_KEY = stringPreferencesKey("background_uri")
 private val BLUR_KEY = floatPreferencesKey("background_blur")
+private val BRIGHTNESS_KEY = floatPreferencesKey("background_brightness")
 
 private val PB_SONG_URI = stringPreferencesKey("pb_song_uri")
 private val PB_PLAYLIST = stringPreferencesKey("pb_playlist")
@@ -62,30 +63,32 @@ fun Context.playlistsFlow(): Flow<List<Playlist>> = dataStore.data.map { prefs -
     } ?: emptyList()
 }
 
-// ---------- 背景圖 + 模糊度 ----------
-data class BackgroundPrefs(val uri: String?, val blur: Float)
+// ---------- 背景圖 + 模糊度 + 明亮度 ----------
+data class BackgroundPrefs(
+    val uri: String?, 
+    val blur: Float,
+    val brightness: Float
+)
 
-suspend fun Context.saveBackground(uri: String?, blur: Float) {
+suspend fun Context.saveBackground(uri: String?, blur: Float, brightness: Float) {
     dataStore.edit { prefs ->
         if (uri == null) prefs.remove(BG_URI_KEY) else prefs[BG_URI_KEY] = uri
         prefs[BLUR_KEY] = blur
+        prefs[BRIGHTNESS_KEY] = brightness
     }
 }
 
 fun Context.backgroundFlow(): Flow<BackgroundPrefs> = dataStore.data.map { prefs ->
     BackgroundPrefs(
         uri = prefs[BG_URI_KEY],
-        blur = prefs[BLUR_KEY] ?: 12f
+        blur = prefs[BLUR_KEY] ?: 12f,
+        brightness = prefs[BRIGHTNESS_KEY] ?: 0.7f
     )
 }
 
 suspend fun Context.saveBackgroundImage(sourceUri: Uri): Uri? = withContext(Dispatchers.IO) {
     try {
-        // 1. 刪除所有舊的背景圖片，避免佔用儲存空間
-        filesDir.listFiles()?.filter { it.name.startsWith("background_") || it.name == "background.jpg" }?.forEach { it.delete() }
-        
-        // 2. 使用時間戳作為新檔名，確保每次的 URI 都不一樣，強制刷新圖片
-        val target = File(filesDir, "background_${System.currentTimeMillis()}.jpg")
+        val target = File(filesDir, "background.jpg")
         contentResolver.openInputStream(sourceUri)?.use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
         }
