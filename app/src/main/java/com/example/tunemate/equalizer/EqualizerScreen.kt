@@ -1,16 +1,17 @@
 package com.example.tunemate.equalizer
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -75,8 +76,6 @@ fun EqualizerScreen() {
 
     // ---------- 音量增幅器 state ----------
     val booster = EqualizerHolder.loudnessEnhancer
-
-    // 關鍵：明確轉成 Number 再 toInt()，避免交集類型推導歧義
     val initialGain: Int = if (booster != null) {
         val raw: Number = booster.getTargetGain()
         raw.toInt()
@@ -110,50 +109,61 @@ fun EqualizerScreen() {
 
         Spacer(Modifier.height(8.dp))
 
-        // ============ 低 / 中 / 高音提示 ============
+        // ============ 低 / 中 / 高音提示 (均分寬度) ============
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("低音", color = Color(0xFF4FC3F7), fontWeight = FontWeight.Bold)
-            Text("中音", color = Color(0xFF81C784), fontWeight = FontWeight.Bold)
-            Text("高音", color = Color(0xFFFFB74D), fontWeight = FontWeight.Bold)
+            // 用 weight 讓標籤對齊下方的滑桿區塊
+            Text("低音", color = Color(0xFF4FC3F7), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+            Text("中音", color = Color(0xFF81C784), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            Text("高音", color = Color(0xFFFFB74D), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
         }
         HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
-        Spacer(Modifier.height(12.dp))
-
-        // ============ 垂直滑桿：band 由左至右排列 ============
+        
+        // ============ 垂直滑桿區塊 (給予固定高度以撐開空間) ============
+        // 這裡設定 320dp 高度，讓滑桿有足夠空間延伸
         Row(
             Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.Top
+                .height(320.dp)
+                .padding(vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             for (b in 0 until numBands) {
                 val centerHz: Float = eq.getCenterFreq(b.toShort()) / 1000f
                 val level: Int = bandLevels[b]
+                
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.width(56.dp)
+                    modifier = Modifier
+                        .weight(1f) // 平分寬度
+                        .fillMaxHeight()
                 ) {
+                    // 頂部數值
                     Text(
                         text = "%+.0f".format(level.toFloat() / 100f),
                         color = Color.LightGray,
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(8.dp))
+                    
+                    // 垂直滑桿 (佔用剩餘高度)
                     VerticalBandSlider(
                         level = level,
                         minLevel = minLevel,
                         maxLevel = maxLevel,
+                        modifier = Modifier.weight(1f), // 撐滿中間空間
                         onValueChange = { v: Int ->
                             bandLevels[b] = v
                             runCatching { eq.setBandLevel(b.toShort(), v.toShort()) }
                         }
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(8.dp))
+                    
+                    // 底部頻率
                     Text(
                         text = formatHz(centerHz),
                         color = bandColor(centerHz),
@@ -165,7 +175,7 @@ fun EqualizerScreen() {
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(4.dp))
         OutlinedButton(onClick = {
             for (b in 0 until numBands) {
                 bandLevels[b] = 0
@@ -223,16 +233,8 @@ fun EqualizerScreen() {
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    "0 dB",
-                    color = Color.LightGray,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    "%.1f dB".format(MAX_BOOSTER_GAIN_MB.toFloat() / 100f),
-                    color = Color.LightGray,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text("0 dB", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                Text("%.1f dB".format(MAX_BOOSTER_GAIN_MB.toFloat() / 100f), color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
             }
 
             Spacer(Modifier.height(6.dp))
@@ -252,8 +254,7 @@ fun EqualizerScreen() {
 
         val presetCount: Int = eq.numberOfPresets.toInt()
         for (p in 0 until presetCount) {
-            val name = runCatching { eq.getPresetName(p.toShort()) }
-                .getOrDefault("Preset $p")
+            val name = runCatching { eq.getPresetName(p.toShort()) }.getOrDefault("Preset $p")
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -287,27 +288,29 @@ fun EqualizerScreen() {
 }
 
 /* ============================================================
- * 垂直滑桿：把水平 Slider 旋轉 -90°，讓「值變大 = 往上」。
+ * 動態垂直滑桿：根據父容器給予的空間自動計算高度
  * ============================================================ */
 @Composable
 private fun VerticalBandSlider(
     level: Int,
     minLevel: Int,
     maxLevel: Int,
+    modifier: Modifier = Modifier,
     onValueChange: (Int) -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .width(56.dp)
-            .height(200.dp),
+    BoxWithConstraints(
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
+        // 旋轉前，Slider 的寬度應該等於容器的高度
+        val sliderHeight = maxHeight
+        
         Slider(
             value = level.toFloat(),
             onValueChange = { v: Float -> onValueChange(v.toInt()) },
             valueRange = minLevel.toFloat()..maxLevel.toFloat(),
             modifier = Modifier
-                .width(200.dp)
+                .width(sliderHeight) // 使用容器高度作為寬度
                 .graphicsLayer { rotationZ = -90f }
         )
     }
