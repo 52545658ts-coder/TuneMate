@@ -2,12 +2,11 @@ package com.example.tunemate.equalizer
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -30,8 +29,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 
 /** 音量增幅器上限：0 ~ +15 dB（單位：毫貝 mB，1 dB = 100 mB） */
@@ -114,21 +115,20 @@ fun EqualizerScreen() {
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // 用 weight 讓標籤對齊下方的滑桿區塊
             Text("低音", color = Color(0xFF4FC3F7), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
             Text("中音", color = Color(0xFF81C784), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
             Text("高音", color = Color(0xFFFFB74D), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
         }
         HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
         
-        // ============ 垂直滑桿區塊 (給予固定高度以撐開空間) ============
-        // 這裡設定 320dp 高度，讓滑桿有足夠空間延伸
+        // ============ 垂直滑桿區塊 ============
+        // 設定固定高度 450dp，確保在任何螢幕上都有足夠的垂直空間讓滑桿拉長
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(320.dp)
-                .padding(vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                .height(450.dp)
+                .padding(vertical = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             for (b in 0 until numBands) {
@@ -138,44 +138,43 @@ fun EqualizerScreen() {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .weight(1f) // 平分寬度
+                        .weight(1f)
                         .fillMaxHeight()
                 ) {
                     // 頂部數值
                     Text(
                         text = "%+.0f".format(level.toFloat() / 100f),
                         color = Color.LightGray,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(12.dp))
                     
-                    // 垂直滑桿 (佔用剩餘高度)
+                    // 垂直滑桿 (佔用中間所有剩餘高度)
                     VerticalBandSlider(
                         level = level,
                         minLevel = minLevel,
                         maxLevel = maxLevel,
-                        modifier = Modifier.weight(1f), // 撐滿中間空間
+                        modifier = Modifier.weight(1f), 
                         onValueChange = { v: Int ->
                             bandLevels[b] = v
                             runCatching { eq.setBandLevel(b.toShort(), v.toShort()) }
                         }
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(12.dp))
                     
                     // 底部頻率
                     Text(
                         text = formatHz(centerHz),
                         color = bandColor(centerHz),
                         fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(4.dp))
         OutlinedButton(onClick = {
             for (b in 0 until numBands) {
                 bandLevels[b] = 0
@@ -288,7 +287,8 @@ fun EqualizerScreen() {
 }
 
 /* ============================================================
- * 動態垂直滑桿：根據父容器給予的空間自動計算高度
+ * 完美的垂直滑桿：透過 Layout 交換寬高限制，
+ * 確保它不僅視覺上旋轉，在佈局中也真正佔據了垂直高度。
  * ============================================================ */
 @Composable
 private fun VerticalBandSlider(
@@ -298,20 +298,37 @@ private fun VerticalBandSlider(
     modifier: Modifier = Modifier,
     onValueChange: (Int) -> Unit
 ) {
-    BoxWithConstraints(
-        modifier = modifier.fillMaxSize(),
+    Box(
+        modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
-        // 旋轉前，Slider 的寬度應該等於容器的高度
-        val sliderHeight = maxHeight
-        
         Slider(
             value = level.toFloat(),
             onValueChange = { v: Float -> onValueChange(v.toInt()) },
             valueRange = minLevel.toFloat()..maxLevel.toFloat(),
             modifier = Modifier
-                .width(sliderHeight) // 使用容器高度作為寬度
-                .graphicsLayer { rotationZ = -90f }
+                .layout { measurable, constraints ->
+                    // 關鍵：在測量時，強制將父容器給的「高度」當作寬度傳給 Slider
+                    val placeable = measurable.measure(
+                        Constraints(
+                            minWidth = constraints.minHeight,
+                            maxWidth = constraints.maxHeight,
+                            minHeight = constraints.minWidth,
+                            maxHeight = constraints.maxWidth
+                        )
+                    )
+                    // 告訴父佈局，這個元件佔用的真實寬高是交換後的
+                    layout(placeable.height, placeable.width) {
+                        // 因為要圍繞中心旋轉，放置時需要進行偏移補償
+                        placeable.place(
+                            x = (placeable.height - placeable.width) / 2,
+                            y = (placeable.width - placeable.height) / 2
+                        )
+                    }
+                }
+                .graphicsLayer {
+                    rotationZ = -90f
+                }
         )
     }
 }
