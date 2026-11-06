@@ -19,11 +19,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -95,9 +98,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -133,6 +139,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 /* ============================================================
  * 播放模式
@@ -158,35 +167,6 @@ sealed class ViewMode {
 private data class RemoveRequest(
     val song: Song,
     val fromPlaylistName: String?
-)
-
-/* ============================================================
- * 主題預設色盤
- * ============================================================ */
-private val PRESET_BG_COLORS = listOf(
-    0xFF0B0B1AL,  // 深藍黑（預設）
-    0xFF000000L,  // 純黑
-    0xFF1A1A2EL,  // 深藍紫
-    0xFF0F3460L,  // 深藍
-    0xFF1E1E1EL,  // 深灰
-    0xFF241B2FL,  // 深紫
-    0xFF0B1A1AL,  // 深青
-    0xFF1A0B0BL,  // 深紅
-    0xFF2D2D2DL,  // 中灰
-    0xFF2A1B0BL   // 深棕
-)
-
-private val PRESET_ACCENT_COLORS = listOf(
-    0xFF4FC3F7L,  // 天藍（預設）
-    0xFF81C784L,  // 綠
-    0xFFFFB74DL,  // 橙
-    0xFFE57373L,  // 紅
-    0xFFBA68C8L,  // 紫
-    0xFF4DD0E1L,  // 青
-    0xFFFFF176L,  // 黃
-    0xFFF06292L,  // 粉
-    0xFFA1887FL,  // 棕
-    0xFF90A4AEL   // 灰藍
 )
 
 /* ============================================================
@@ -252,7 +232,7 @@ private fun rememberMediaController(context: Context): MediaController? {
 }
 
 /* ============================================================
- * 根 UI（動態主題封裝）
+ * 根 UI
  * ============================================================ */
 @Composable
 fun AppRoot() {
@@ -263,10 +243,9 @@ fun AppRoot() {
     val bgColor = Color(themePrefs.backgroundColor)
     val accent = Color(themePrefs.accentColor)
     
-    // 如果背景是純黑，讓對話框的底色稍微亮一點，避免融合看不清
+    // 避免對話框與純黑背景融合
     val surfaceColor = if (bgColor == Color.Black) Color(0xFF1E1E1E) else bgColor
 
-    // 自定義 Material 顏色方案，強制所有內建組件（按鈕、滑桿、開關）使用主題色
     val customColorScheme = darkColorScheme(
         primary = accent,
         onPrimary = Color.White,
@@ -295,53 +274,42 @@ fun AppContent(themePrefs: ThemePrefs) {
     val bgColor = MaterialTheme.colorScheme.background
     val accent = MaterialTheme.colorScheme.primary
 
-    // 持久化資料
     val songsFlow = remember(context) { context.songsFlow() }
     val playlistsFlow = remember(context) { context.playlistsFlow() }
     val songs by songsFlow.collectAsState(initial = emptyList())
     val playlists by playlistsFlow.collectAsState(initial = emptyList())
 
-    // 供 Player.Listener 讀取最新值
     val songsState = rememberUpdatedState(songs)
     val activeSongsState = remember { mutableStateOf<List<Song>>(emptyList()) }
     val playModeState = remember { mutableStateOf(PlayMode.REPEAT_ALL) }
 
-    // 播放狀態
     var currentSong by remember { mutableStateOf<Song?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var playMode by remember { mutableStateOf(PlayMode.REPEAT_ALL) }
     var activeSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var currentSourcePlaylist by remember { mutableStateOf<String?>(null) }
 
-    // 恢復標記
     var restored by remember { mutableStateOf(false) }
-
-    // 導航
     var viewMode by remember { mutableStateOf<ViewMode>(ViewMode.Home) }
     var showSettings by remember { mutableStateOf(false) }
 
-    // 背景
     var backgroundUri by remember { mutableStateOf<Uri?>(null) }
     var blurRadius by remember { mutableFloatStateOf(12f) }
 
-    // 對話框
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
     var removeRequest by remember { mutableStateOf<RemoveRequest?>(null) }
     var pendingImport by remember { mutableStateOf<List<Song>?>(null) }
     var showImportDialog by remember { mutableStateOf(false) }
 
-    // 播放進度
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var isDragging by remember { mutableStateOf(false) }
     var dragMs by remember { mutableFloatStateOf(0f) }
 
-    // 同步到 state 供 listener 讀取
     LaunchedEffect(activeSongs) { activeSongsState.value = activeSongs }
     LaunchedEffect(playMode) { playModeState.value = playMode }
 
-    // ---------- 音頻選擇器（多選） ----------
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -371,14 +339,12 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
     }
 
-    // 背景設定載入
     LaunchedEffect(Unit) {
         val prefs = context.backgroundFlow().first()
         backgroundUri = prefs.uri?.let { Uri.parse(it) }
         blurRadius = prefs.blur
     }
 
-    // 正在查看的歌單被刪除後自動回首頁
     LaunchedEffect(viewMode, playlists) {
         val mode = viewMode
         if (mode is ViewMode.Custom && playlists.none { it.name == mode.playlistName }) {
@@ -386,7 +352,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
     }
 
-    // ---------- 恢復上次播放狀態 ----------
     LaunchedEffect(controller) {
         val c = controller ?: return@LaunchedEffect
         if (restored) return@LaunchedEffect
@@ -425,7 +390,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         c.prepare()
     }
 
-    // ---------- 保存：歌曲/歌單/模式變化時立即保存 ----------
     LaunchedEffect(currentSong, currentSourcePlaylist, activeSongs, playMode) {
         val c = controller ?: return@LaunchedEffect
         val song = currentSong ?: return@LaunchedEffect
@@ -439,7 +403,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         )
     }
 
-    // ---------- 保存：定期保存進度 ----------
     LaunchedEffect(controller) {
         val c = controller ?: return@LaunchedEffect
         while (true) {
@@ -458,7 +421,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
     }
 
-    // 進度輪詢
     LaunchedEffect(controller) {
         val c = controller ?: return@LaunchedEffect
         while (true) {
@@ -471,7 +433,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
     }
 
-    // 播放器監聽
     DisposableEffect(controller) {
         val c = controller ?: return@DisposableEffect onDispose { }
         val listener = object : Player.Listener {
@@ -500,7 +461,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         onDispose { c.removeListener(listener) }
     }
 
-    // 返回鍵
     BackHandler(enabled = !showSettings && viewMode != ViewMode.Home) {
         viewMode = ViewMode.Home
     }
@@ -515,7 +475,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         return
     }
 
-    // ---------- 本地播放函式 ----------
     fun playFrom(list: List<Song>, index: Int, sourcePlaylist: String?) {
         if (list.isEmpty() || index !in list.indices) return
         activeSongs = list
@@ -569,7 +528,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
     }
 
-    // ---------- 主體 ----------
     Box(Modifier.fillMaxSize().background(bgColor)) {
         if (showSettings) {
             SettingsScreen(
@@ -666,7 +624,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
     }
 
-    // ---------- 建立歌單對話框 ----------
     if (showCreateDialog) {
         CreatePlaylistDialog(
             allSongs = songs,
@@ -680,7 +637,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         )
     }
 
-    // ---------- 刪除歌單確認 ----------
     if (playlistToDelete != null) {
         val pl = playlistToDelete!!
         AlertDialog(
@@ -705,7 +661,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         )
     }
 
-    // ---------- 移除歌曲確認 ----------
     if (removeRequest != null) {
         val req = removeRequest!!
         val isAllSongs = req.fromPlaylistName == null
@@ -758,7 +713,6 @@ fun AppContent(themePrefs: ThemePrefs) {
         )
     }
 
-    // ---------- 匯入後選擇加入哪個歌單 ----------
     if (showImportDialog && pendingImport != null) {
         ImportToPlaylistDialog(
             pickedCount = pendingImport!!.size,
@@ -868,7 +822,6 @@ private fun PlaylistListContent(
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(Modifier.weight(1f)) {
-            // 「所有歌曲」：只有從「所有歌曲」隊列播放時才標記
             item {
                 val isSource = currentPlayingUri != null && currentSourcePlaylist == null
                 PlaylistRow(
@@ -882,7 +835,6 @@ private fun PlaylistListContent(
                 )
             }
 
-            // 自訂歌單：只有「當前播放來源」的這個歌單才標記
             items(playlists) { pl ->
                 val isSource = currentPlayingUri != null && currentSourcePlaylist == pl.name
                 PlaylistRow(
@@ -1645,6 +1597,9 @@ private fun BackgroundSettingsPage(
     }
 }
 
+/* ============================================================
+ * 全新主題設置頁（漸層取色條 + 深淺度滑桿）
+ * ============================================================ */
 @Composable
 private fun ThemeSettingsPage(
     themePrefs: ThemePrefs,
@@ -1688,38 +1643,22 @@ private fun ThemeSettingsPage(
         Spacer(Modifier.height(24.dp))
 
         // 預設背景顏色
-        Text("預設背景顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        ColorRow(
-            colors = PRESET_BG_COLORS.take(5),
-            selected = selectedBg,
-            onSelect = { selectedBg = it }
-        )
-        Spacer(Modifier.height(8.dp))
-        ColorRow(
-            colors = PRESET_BG_COLORS.drop(5),
-            selected = selectedBg,
-            onSelect = { selectedBg = it }
+        ColorPickerSection(
+            title = "預設背景顏色",
+            initialColor = selectedBg,
+            onColorChanged = { selectedBg = it }
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
 
         // 呼吸發光特效顏色
-        Text("呼吸發光特效顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        ColorRow(
-            colors = PRESET_ACCENT_COLORS.take(5),
-            selected = selectedAccent,
-            onSelect = { selectedAccent = it }
-        )
-        Spacer(Modifier.height(8.dp))
-        ColorRow(
-            colors = PRESET_ACCENT_COLORS.drop(5),
-            selected = selectedAccent,
-            onSelect = { selectedAccent = it }
+        ColorPickerSection(
+            title = "呼吸發光特效顏色",
+            initialColor = selectedAccent,
+            onColorChanged = { selectedAccent = it }
         )
 
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(32.dp))
 
         // 即時預覽
         Text("預覽", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
@@ -1773,32 +1712,168 @@ private fun ThemeSettingsPage(
     }
 }
 
+/* ============================================================
+ * 顏色選取區塊（包含色相與明暗兩條滑桿）
+ * ============================================================ */
 @Composable
-private fun ColorRow(
-    colors: List<Long>,
-    selected: Long,
-    onSelect: (Long) -> Unit
+private fun ColorPickerSection(
+    title: String,
+    initialColor: Long,
+    onColorChanged: (Long) -> Unit
 ) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        colors.forEach { c ->
+    // 初始解析顏色為 HSL
+    val initialHsl = remember(initialColor) { colorToHsl(Color(initialColor)) }
+    
+    var hueRatio by remember(initialColor) { mutableFloatStateOf(initialHsl[0] / 360f) }
+    var lightnessRatio by remember(initialColor) { mutableFloatStateOf(initialHsl[2]) }
+
+    // 當滑桿拖動時，計算並回傳新的 Color Long
+    fun updateColor(newHue: Float, newL: Float) {
+        val color = Color.hsl(newHue * 360f, 1f, newL) // Saturation 固定為 1.0 保持鮮豔
+        onColorChanged(color.value.toLong())
+    }
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            // 顏色小預覽
             Box(
                 Modifier
-                    .size(52.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
-                    .background(Color(c))
-                    .border(
-                        width = if (c == selected) 3.dp else 1.dp,
-                        color = if (c == selected) MaterialTheme.colorScheme.onBackground
-                        else Color.Gray.copy(alpha = 0.5f),
-                        shape = CircleShape
-                    )
-                    .clickable { onSelect(c) }
+                    .background(Color(initialColor))
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // 1. 色相滑桿
+        GradientSlider(
+            brush = Brush.horizontalGradient(
+                listOf(
+                    Color.Red, Color.Yellow, Color.Green, 
+                    Color.Cyan, Color.Blue, Color.Magenta, Color.Red
+                )
+            ),
+            position = hueRatio,
+            thumbColor = Color.hsl(hueRatio * 360f, 1f, 0.5f),
+            onPositionChange = {
+                hueRatio = it
+                updateColor(hueRatio, lightnessRatio)
+            }
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        // 2. 深淺度滑桿（黑 -> 當前顏色 -> 白）
+        val currentPureColor = Color.hsl(hueRatio * 360f, 1f, 0.5f)
+        GradientSlider(
+            brush = Brush.horizontalGradient(
+                listOf(Color.Black, currentPureColor, Color.White)
+            ),
+            position = lightnessRatio,
+            thumbColor = Color.hsl(hueRatio * 360f, 1f, lightnessRatio),
+            onPositionChange = {
+                lightnessRatio = it
+                updateColor(hueRatio, lightnessRatio)
+            }
+        )
+    }
+}
+
+/* ============================================================
+ * 自訂漸層滑桿
+ * ============================================================ */
+@Composable
+private fun GradientSlider(
+    brush: Brush,
+    position: Float,
+    thumbColor: Color,
+    onPositionChange: (Float) -> Unit
+) {
+    BoxWithConstraints(
+        Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+    ) {
+        val widthPx = constraints.maxWidth.toFloat()
+        val padding = 12.dp
+        val paddingPx = padding.value * density
+
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        val deltaRatio = dragAmount.x / (widthPx - paddingPx * 2)
+                        val newPos = (position + deltaRatio).coerceIn(0f, 1f)
+                        onPositionChange(newPos)
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures { offset ->
+                        val newPos = ((offset.x - paddingPx) / (widthPx - paddingPx * 2)).coerceIn(0f, 1f)
+                        onPositionChange(newPos)
+                    }
+                }
+        ) {
+            val rectWidth = size.width - paddingPx * 2
+            val rectHeight = 16.dp.toPx()
+            val rectTopLeft = Offset(paddingPx, (size.height - rectHeight) / 2)
+
+            // 畫漸層軌道
+            drawRoundRect(
+                brush = brush,
+                topLeft = rectTopLeft,
+                size = androidx.compose.ui.geometry.Size(rectWidth, rectHeight),
+                cornerRadius = CornerRadius(rectHeight / 2)
+            )
+
+            // 畫滑塊
+            val thumbX = paddingPx + rectWidth * position
+            drawCircle(
+                color = Color.White,
+                radius = 12.dp.toPx(),
+                center = Offset(thumbX, size.height / 2)
+            )
+            drawCircle(
+                color = thumbColor,
+                radius = 8.dp.toPx(),
+                center = Offset(thumbX, size.height / 2)
             )
         }
     }
+}
+
+/* ============================================================
+ * 顏色轉換工具：RGB -> HSL
+ * ============================================================ */
+private fun colorToHsl(color: Color): FloatArray {
+    val r = color.red
+    val g = color.green
+    val b = color.blue
+    val max = max(r, max(g, b))
+    val min = min(r, min(g, b))
+    val l = (max + min) / 2f
+    var h = 0f
+    var s = 0f
+
+    if (max != min) {
+        val d = max - min
+        s = if (l > 0.5f) d / (2f - max - min) else d / (max + min)
+        h = when {
+            max == r -> (g - b) / d + (if (g < b) 6f else 0f)
+            max == g -> (b - r) / d + 2f
+            else -> (r - g) / d + 4f
+        }
+        h /= 6f
+    }
+    // 如果飽和度極低（黑白灰），則色相保持原樣或預設為0
+    if (s < 0.1f) {
+        h = 0f
+    }
+    return floatArrayOf(h * 360f, s, l)
 }
 
 @Composable
