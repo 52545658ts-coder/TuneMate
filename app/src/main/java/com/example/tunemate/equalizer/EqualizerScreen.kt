@@ -75,16 +75,15 @@ fun EqualizerScreen() {
 
     // ---------- 音量增幅器 state ----------
     val booster = EqualizerHolder.loudnessEnhancer
-    val initialGain: Int = booster?.targetGain ?: 0
-    var boosterGain by remember(booster) {
-        mutableIntStateOf(
-            when {
-                initialGain < 0 -> 0
-                initialGain > MAX_BOOSTER_GAIN_MB -> MAX_BOOSTER_GAIN_MB
-                else -> initialGain
-            }
-        )
+
+    // 用明確方法呼叫 + 明確變量類型，避免平台類型推導歧義
+    val initialGain: Int = if (booster != null) booster.getTargetGain() else 0
+    val clampedInitialGain: Int = when {
+        initialGain < 0 -> 0
+        initialGain > MAX_BOOSTER_GAIN_MB -> MAX_BOOSTER_GAIN_MB
+        else -> initialGain
     }
+    var boosterGain by remember(booster) { mutableIntStateOf(clampedInitialGain) }
 
     Column(Modifier.fillMaxWidth()) {
         // ============ 均衡器 標題 + 開關 ============
@@ -283,8 +282,7 @@ fun EqualizerScreen() {
 }
 
 /* ============================================================
- * 垂直滑桿：把水平 Slider 旋轉 -90°，
- * 讓「值變大 = 往上」符合均衡器直覺。
+ * 垂直滑桿：把水平 Slider 旋轉 -90°，讓「值變大 = 往上」。
  * ============================================================ */
 @Composable
 private fun VerticalBandSlider(
