@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -545,47 +546,39 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
     }
 
-    // ---------- 主體 ----------
+    // ---------- 主體（全局背景修復：遮罩改為黑色半透明，透出背景圖） ----------
     Box(Modifier.fillMaxSize()) {
-        // 背景渲染（只有非設置頁且設定了背景時顯示）
-        if (backgroundUri != null && !showSettings) {
+        // 1. 全局背景層
+        if (backgroundUri != null) {
             AsyncImage(
                 model = backgroundUri,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(blurRadius.dp)
+                modifier = Modifier.fillMaxSize().blur(blurRadius.dp)
             )
-            // 加上半透明遮罩，保證文字清晰
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
-            )
+            // 使用低透明度的黑色遮罩，保證亮色文字清晰，同時讓背景圖透出來
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
         } else {
-            // 否則顯示主題純色背景
+            // 若無背景圖，套用主題顏色
             Box(Modifier.fillMaxSize().background(bgColor))
         }
 
-        // 內容渲染
+        // 2. 內容層（所有頁面內部透明，透出底層背景）
         if (showSettings) {
-            Box(Modifier.fillMaxSize()) {
-                SettingsScreen(
-                    backgroundUri = backgroundUri,
-                    blurRadius = blurRadius,
-                    onBackgroundChanged = { uri, blur ->
-                        backgroundUri = uri
-                        blurRadius = blur
-                        scope.launch { context.saveBackground(uri?.toString(), blur) }
-                    },
-                    themePrefs = themePrefs,
-                    onThemeChanged = { bg, ac, tx ->
-                        scope.launch { context.saveTheme(bg, ac, tx) }
-                    },
-                    onBack = { showSettings = false }
-                )
-            }
+            SettingsScreen(
+                backgroundUri = backgroundUri,
+                blurRadius = blurRadius,
+                onBackgroundChanged = { uri, blur ->
+                    backgroundUri = uri
+                    blurRadius = blur
+                    scope.launch { context.saveBackground(uri?.toString(), blur) }
+                },
+                themePrefs = themePrefs,
+                onThemeChanged = { bg, ac, tx ->
+                    scope.launch { context.saveTheme(bg, ac, tx) }
+                },
+                onBack = { showSettings = false }
+            )
         } else {
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f)) {
@@ -641,6 +634,8 @@ fun AppContent(themePrefs: ThemePrefs) {
                     }
                 }
 
+                // 讓底部播放條在有背景時也有稍微透明的效果（可選）
+                val barBg = if (backgroundUri != null) Color.Black.copy(alpha = 0.6f) else MaterialTheme.colorScheme.background
                 BottomPlayerBar(
                     player = controller,
                     currentSong = currentSong,
@@ -650,6 +645,7 @@ fun AppContent(themePrefs: ThemePrefs) {
                     durationMs = durationMs,
                     isDragging = isDragging,
                     dragMs = dragMs,
+                    backgroundColor = barBg,
                     onDragChange = { v ->
                         isDragging = true
                         dragMs = v
@@ -1158,7 +1154,7 @@ private fun SongRow(
 }
 
 /* ============================================================
- * 底部播放控制條
+ * 底部播放控制條（加入自定義背景參數）
  * ============================================================ */
 @Composable
 private fun BottomPlayerBar(
@@ -1170,6 +1166,7 @@ private fun BottomPlayerBar(
     durationMs: Long,
     isDragging: Boolean,
     dragMs: Float,
+    backgroundColor: Color,
     onDragChange: (Float) -> Unit,
     onDragFinish: () -> Unit,
     onCyclePlayMode: () -> Unit
@@ -1180,7 +1177,7 @@ private fun BottomPlayerBar(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f))
+            .background(backgroundColor)
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
@@ -1644,7 +1641,7 @@ private fun BackgroundSettingsPage(
 }
 
 /* ============================================================
- * 主題設定頁面（包含背景、特效、文字顏色）
+ * 主題設定頁面（獨立預覽區，不受全局背景干擾）
  * ============================================================ */
 @Composable
 private fun ThemeSettingsPage(
@@ -1652,12 +1649,10 @@ private fun ThemeSettingsPage(
     onThemeChanged: (Long, Long, Long) -> Unit,
     onBack: () -> Unit
 ) {
-    // 局部狀態，用於即時反饋，避免頻繁寫入 DataStore 導致卡頓
     var localBg by remember(themePrefs.backgroundColor) { mutableLongStateOf(themePrefs.backgroundColor) }
     var localAccent by remember(themePrefs.accentColor) { mutableLongStateOf(themePrefs.accentColor) }
     var localText by remember(themePrefs.textColor) { mutableLongStateOf(themePrefs.textColor) }
 
-    // 防抖：停止拖動 200ms 後才保存
     LaunchedEffect(localBg, localAccent, localText) {
         delay(200)
         if (localBg != themePrefs.backgroundColor || 
@@ -1717,7 +1712,7 @@ private fun ThemeSettingsPage(
 
         Spacer(Modifier.height(32.dp))
 
-        // ================= 預覽 =================
+        // ================= 預覽（獨立純色區域，保持對顏色的準確預覽） =================
         Text("預覽", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
         Box(
@@ -1771,14 +1766,13 @@ private fun ThemeSettingsPage(
 }
 
 /* ============================================================
- * 自定義 HSV 色彩選擇器（純 Compose 實現，滑動絕對流暢）
+ * 自定義 HSV 色彩選擇器
  * ============================================================ */
 @Composable
 private fun HsvColorPicker(
     initialColor: Color,
     onColorChange: (Color) -> Unit
 ) {
-    // 將 Color 轉換為 HSV 來初始化
     val hsv = remember(initialColor) {
         val r = initialColor.red
         val g = initialColor.green
@@ -1801,7 +1795,6 @@ private fun HsvColorPicker(
     var v by remember { mutableFloatStateOf(hsv[2]) }
 
     Column(Modifier.fillMaxWidth()) {
-        // 1. Hue (色相) 彩虹滑桿
         GradientSlider(
             value = h,
             onValueChange = {
@@ -1817,7 +1810,6 @@ private fun HsvColorPicker(
 
         Spacer(Modifier.height(8.dp))
 
-        // 2. Saturation (飽和度) 白到純色滑桿
         GradientSlider(
             value = s,
             onValueChange = {
@@ -1830,7 +1822,6 @@ private fun HsvColorPicker(
 
         Spacer(Modifier.height(8.dp))
 
-        // 3. Value (明度) 黑到亮色滑桿
         GradientSlider(
             value = v,
             onValueChange = {
@@ -1843,9 +1834,6 @@ private fun HsvColorPicker(
     }
 }
 
-/**
- * 帶有漸層背景的滑桿，利用 Canvas 畫背景，Slider 設為透明。
- */
 @Composable
 private fun GradientSlider(
     value: Float,
@@ -1859,7 +1847,6 @@ private fun GradientSlider(
             .height(48.dp),
         contentAlignment = Alignment.Center
     ) {
-        // 漸層背景條
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1869,7 +1856,6 @@ private fun GradientSlider(
             drawRect(brush = Brush.horizontalGradient(colors))
         }
         
-        // 透明滑桿，僅用來顯示 Thumb 和處理觸摸事件
         Slider(
             value = value,
             onValueChange = onValueChange,
@@ -1910,9 +1896,6 @@ private fun EqualizerSettingsPage(onBack: () -> Unit) {
     }
 }
 
-/* ============================================================
- * 工具：毫秒 → mm:ss
- * ============================================================ */
 private fun formatMs(ms: Long): String {
     if (ms <= 0) return "00:00"
     val totalSec = ms / 1000
