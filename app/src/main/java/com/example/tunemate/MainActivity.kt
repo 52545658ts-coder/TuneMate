@@ -687,7 +687,8 @@ fun AppContent(themePrefs: ThemePrefs) {
             enter = slideInVertically(initialOffsetY = { it }),
             exit = slideOutVertically(targetOffsetY = { it })
         ) {
-            if (currentSong != null) {
+            val song = currentSong
+            if (song != null) {
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -705,7 +706,7 @@ fun AppContent(themePrefs: ThemePrefs) {
 
                     PlayerSheetContent(
                         player = controller,
-                        currentSong = currentSong,
+                        currentSong = song,
                         isPlaying = isPlaying,
                         playMode = playMode,
                         positionMs = positionMs,
