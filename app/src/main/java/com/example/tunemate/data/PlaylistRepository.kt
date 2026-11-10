@@ -98,6 +98,19 @@ suspend fun Context.saveBackgroundImage(sourceUri: Uri): Uri? = withContext(Disp
     }
 }
 
+// ---------- 專輯封面 ----------
+suspend fun Context.saveCoverImage(sourceUri: Uri, songId: Long): String? = withContext(Dispatchers.IO) {
+    try {
+        val target = File(filesDir, "cover_$songId.jpg")
+        contentResolver.openInputStream(sourceUri)?.use { input ->
+            target.outputStream().use { output -> input.copyTo(output) }
+        }
+        Uri.fromFile(target).toString()
+    } catch (e: Exception) {
+        null
+    }
+}
+
 // ---------- 播放狀態 ----------
 data class PlaybackState(
     val songUri: String? = null,
