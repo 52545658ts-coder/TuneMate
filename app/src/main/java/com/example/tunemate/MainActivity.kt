@@ -26,7 +26,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +33,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -320,6 +318,10 @@ fun AppContent(themePrefs: ThemePrefs) {
     var removeRequest by remember { mutableStateOf<RemoveRequest?>(null) }
     var pendingImport by remember { mutableStateOf<List<Song>?>(null) }
     var showImportDialog by remember { mutableStateOf(false) }
+    
+    // 新增的對話框狀態
+    var songToRename by remember { mutableStateOf<Song?>(null) }
+    var songToAddToPlaylist by remember { mutableStateOf<Song?>(null) }
 
     // 播放進度
     var positionMs by remember { mutableLongStateOf(0L) }
@@ -529,7 +531,7 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
         controller.prepare()
         controller.play()
-        showPlayerSheet = true // 點擊歌曲後自動彈出播放頁
+        showPlayerSheet = true
     }
 
     fun cyclePlayMode() {
@@ -579,7 +581,7 @@ fun AppContent(themePrefs: ThemePrefs) {
             Box(Modifier.fillMaxSize().background(bgColor))
         }
 
-        // 2. 基礎頁面 (設定頁 或 列表頁)
+        // 2. 基礎頁面
         if (showSettings) {
             SettingsScreen(
                 backgroundUri = backgroundUri,
@@ -626,7 +628,9 @@ fun AppContent(themePrefs: ThemePrefs) {
                                 val idx = songs.indexOf(song).coerceAtLeast(0)
                                 playFrom(songs, idx, null)
                             },
-                            onRemove = { song -> removeRequest = RemoveRequest(song, null) }
+                            onRemove = { song -> removeRequest = RemoveRequest(song, null) },
+                            onRename = { song -> songToRename = song },
+                            onAddToPlaylist = { song -> songToAddToPlaylist = song }
                         )
 
                         is ViewMode.Custom -> {
@@ -643,16 +647,15 @@ fun AppContent(themePrefs: ThemePrefs) {
                                         val idx = pl.songs.indexOf(song).coerceAtLeast(0)
                                         playFrom(pl.songs, idx, pl.name)
                                     },
-                                    onRemove = { song ->
-                                        removeRequest = RemoveRequest(song, pl.name)
-                                    }
+                                    onRemove = { song -> removeRequest = RemoveRequest(song, pl.name) },
+                                    onRename = { song -> songToRename = song },
+                                    onAddToPlaylist = { song -> songToAddToPlaylist = song }
                                 )
                             }
                         }
                     }
                 }
 
-                // 底部播放條 (點擊打開全屏)
                 val barAlpha = ((1f - brightness) + 0.3f).coerceIn(0f, 1f)
                 val barBg = if (backgroundUri != null) Color.Black.copy(alpha = barAlpha) else MaterialTheme.colorScheme.background
                 BottomPlayerBar(
@@ -692,7 +695,7 @@ fun AppContent(themePrefs: ThemePrefs) {
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background) // 預設底色
+                        .background(MaterialTheme.colorScheme.background)
                 ) {
                     if (backgroundUri != null) {
                         AsyncImage(
@@ -728,6 +731,127 @@ fun AppContent(themePrefs: ThemePrefs) {
                     )
                 }
             }
+        }
+    }
+
+    // ---------- 重新命名對話框 ----------
+    if (songToRename != null) {
+        val targetSong = songToRename!!
+        var newName by remember { mutableStateOf(targetSong.title) }
+        
+        AlertDialog(
+            onDismissRequest = { songToRename = null },
+            title = { Text("重新命名") },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("歌曲名稱") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newName.isNotBlank(),
+                    onClick = {
+                        scope.launch {
+                            val trimmedName = newName.trim()
+                            // 1. 更新所有歌曲中該歌曲的名稱
+                            val curSongs = context.songsFlow().first()
+                            val updatedSongs = curSongs.map { 
+                                if (it.uriString == targetSong.uriString) it.copy(title = trimmedName) else it 
+                            }
+                            context.saveSongs(updatedSongs)
+
+                            // 2. 更新所有歌單中該歌曲的名稱
+                            val curPlaylists = context.playlistsFlow().first()
+                            val updatedPlaylists = curPlaylists.map { pl ->
+                                pl.copy(songs = pl.songs.map { 
+                                    if (it.uriString == targetSong.uriString) it.copy(title = trimmedName) else it 
+                                })
+                            }
+                            context.savePlaylists(updatedPlaylists)
+                            
+                            // 3. 如果是當前正在播放的歌曲，同步更新狀態
+                            if (currentSong?.uriString == targetSong.uriString) {
+                                currentSong = currentSong?.copy(title = trimmedName)
+                            }
+                        }
+                        songToRename = null
+                    }
+                ) { Text("儲存") }
+            },
+            dismissButton = { TextButton(onClick = { songToRename = null }) { Text("取消") } }
+        )
+    }
+
+    // ---------- 添加至其他歌單對話框 ----------
+    if (songToAddToPlaylist != null) {
+        val targetSong = songToAddToPlaylist!!
+        // 過濾掉已經包含該歌曲的歌單
+        val availablePlaylists = playlists.filter { pl ->
+            pl.songs.none { it.uriString == targetSong.uriString }
+        }
+
+        if (availablePlaylists.isEmpty()) {
+            AlertDialog(
+                onDismissRequest = { songToAddToPlaylist = null },
+                title = { Text("添加至其他歌單") },
+                text = { Text("所有歌單都已包含此歌曲，或您尚未建立其他歌單。") },
+                confirmButton = {
+                    TextButton(onClick = { songToAddToPlaylist = null }) { Text("確定") }
+                }
+            )
+        } else {
+            var selectedPlaylistIndex by remember { mutableIntStateOf(-1) }
+            AlertDialog(
+                onDismissRequest = { songToAddToPlaylist = null },
+                title = { Text("添加至其他歌單") },
+                text = {
+                    Column {
+                        Text("選擇要加入的歌單：")
+                        Spacer(Modifier.height(8.dp))
+                        LazyColumn(Modifier.heightIn(max = 300.dp)) {
+                            items(availablePlaylists.indices.toList()) { index ->
+                                val pl = availablePlaylists[index]
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedPlaylistIndex = index }
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selectedPlaylistIndex == index,
+                                        onClick = { selectedPlaylistIndex = index }
+                                    )
+                                    Text(pl.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = selectedPlaylistIndex in availablePlaylists.indices,
+                        onClick = {
+                            val targetPlaylist = availablePlaylists[selectedPlaylistIndex]
+                            scope.launch {
+                                val curPlaylists = context.playlistsFlow().first()
+                                val updated = curPlaylists.map { pl ->
+                                    if (pl.name == targetPlaylist.name) {
+                                        pl.copy(songs = pl.songs + targetSong)
+                                    } else pl
+                                }
+                                context.savePlaylists(updated)
+                            }
+                            songToAddToPlaylist = null
+                        }
+                    ) { Text("加入") }
+                },
+                dismissButton = { TextButton(onClick = { songToAddToPlaylist = null }) { Text("取消") } }
+            )
         }
     }
 
@@ -884,7 +1008,6 @@ fun PlayerSheetContent(
             .safeDrawingPadding()
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        // 頂部導航
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -906,7 +1029,6 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(32.dp))
 
-        // 黑膠唱片旋轉區塊
         Box(
             Modifier
                 .fillMaxWidth()
@@ -918,7 +1040,6 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(32.dp))
 
-        // 歌曲信息 (移除了心形按鈕)
         Column(
             Modifier.fillMaxWidth()
         ) {
@@ -941,7 +1062,6 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(24.dp))
 
-        // 進度條
         val sliderMax = durationMs.coerceAtLeast(1L).toFloat()
         val sliderValue = (if (isDragging) dragMs else positionMs.toFloat())
             .coerceIn(0f, sliderMax)
@@ -976,13 +1096,11 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(24.dp))
 
-        // 控制按鈕
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 上一首
             IconButton(onClick = {
                 if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
             }) {
@@ -994,7 +1112,6 @@ fun PlayerSheetContent(
                 )
             }
 
-            // 播放/暫停 (大按鈕)
             Box(
                 Modifier
                     .size(72.dp)
@@ -1013,7 +1130,6 @@ fun PlayerSheetContent(
                 )
             }
 
-            // 下一首
             IconButton(onClick = {
                 if (player.hasNextMediaItem()) player.seekToNextMediaItem()
             }) {
@@ -1025,7 +1141,6 @@ fun PlayerSheetContent(
                 )
             }
 
-            // 播放模式 (已移到最右側)
             IconButton(onClick = onCyclePlayMode) {
                 val (icon, label) = when (playMode) {
                     PlayMode.REPEAT_ONE -> Icons.Default.RepeatOne to "單曲循環"
@@ -1049,7 +1164,6 @@ fun VinylRecord(isPlaying: Boolean) {
     val rotation = remember { Animatable(0f) }
     val accent = MaterialTheme.colorScheme.primary
 
-    // 旋轉動畫：暫停時停止，播放時一直旋轉
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
             while (true) {
@@ -1071,12 +1185,9 @@ fun VinylRecord(isPlaying: Boolean) {
             .rotate(rotation.value),
         contentAlignment = Alignment.Center
     ) {
-        // 黑膠唱片背景
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // 底色
             drawCircle(color = Color(0xFF1A1A1A))
 
-            // 黑膠紋路
             val center = Offset(size.width / 2, size.height / 2)
             val maxRadius = size.width / 2
             for (i in 1..15) {
@@ -1088,7 +1199,6 @@ fun VinylRecord(isPlaying: Boolean) {
                 )
             }
 
-            // 反光高光
             drawArc(
                 color = Color.White.copy(alpha = 0.08f),
                 startAngle = 45f,
@@ -1100,7 +1210,6 @@ fun VinylRecord(isPlaying: Boolean) {
             )
         }
 
-        // 中間的專輯封面區域
         Box(
             Modifier
                 .size(140.dp)
@@ -1116,7 +1225,6 @@ fun VinylRecord(isPlaying: Boolean) {
             )
         }
         
-        // 中心孔
         Box(
             Modifier
                 .size(20.dp)
@@ -1224,7 +1332,7 @@ private fun PlaylistListContent(
 }
 
 /* ============================================================
- * 歌單列（主頁，呼吸發光特效）
+ * 歌單列
  * ============================================================ */
 @Composable
 private fun PlaylistRow(
@@ -1336,7 +1444,9 @@ private fun SongListContent(
     isPlaying: Boolean,
     onBack: () -> Unit,
     onSongClick: (Song) -> Unit,
-    onRemove: (Song) -> Unit
+    onRemove: (Song) -> Unit,
+    onRename: (Song) -> Unit,
+    onAddToPlaylist: (Song) -> Unit
 ) {
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1383,7 +1493,9 @@ private fun SongListContent(
                         isHighlighted = isCurrent,
                         isAnimating = isCurrent && isPlaying,
                         onClick = { onSongClick(song) },
-                        onRemove = { onRemove(song) }
+                        onRemove = { onRemove(song) },
+                        onRename = { onRename(song) },
+                        onAddToPlaylist = { onAddToPlaylist(song) }
                     )
                 }
             }
@@ -1400,7 +1512,9 @@ private fun SongRow(
     isHighlighted: Boolean,
     isAnimating: Boolean,
     onClick: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onRename: () -> Unit,
+    onAddToPlaylist: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val accent = MaterialTheme.colorScheme.primary
@@ -1471,7 +1585,21 @@ private fun SongRow(
                 onDismissRequest = { menuOpen = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("從歌單移除") },
+                    text = { Text("添加至其他歌單") },
+                    onClick = {
+                        menuOpen = false
+                        onAddToPlaylist()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("重新命名") },
+                    onClick = {
+                        menuOpen = false
+                        onRename()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("從歌單移除", color = Color(0xFFFF5252)) },
                     onClick = {
                         menuOpen = false
                         onRemove()
@@ -1512,7 +1640,6 @@ private fun BottomPlayerBar(
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        // 點擊頂部打開全屏
         Row(
             Modifier.fillMaxWidth().clickable { onBarClick() },
             verticalAlignment = Alignment.CenterVertically
