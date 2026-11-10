@@ -9,7 +9,8 @@ data class Song(
     val title: String,
     val artist: String,
     val duration: Long,
-    val uriString: String
+    val uriString: String,
+    val coverUriString: String? = null // 專輯封面本地路徑
 ) {
     val uri: Uri get() = Uri.parse(uriString)
 }
