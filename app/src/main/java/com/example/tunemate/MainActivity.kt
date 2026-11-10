@@ -19,6 +19,11 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -30,6 +35,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,6 +58,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Palette
@@ -61,6 +68,7 @@ import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.AlertDialog
@@ -69,10 +77,12 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -81,6 +91,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -99,13 +110,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.C
@@ -138,6 +154,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.cos
+import kotlin.math.sin
 
 /* ============================================================
  * 播放模式
@@ -228,7 +246,7 @@ private fun rememberMediaController(context: Context): MediaController? {
 }
 
 /* ============================================================
- * 根 UI（動態主題封裝）
+ * 根 UI
  * ============================================================ */
 @Composable
 fun AppRoot() {
@@ -240,10 +258,8 @@ fun AppRoot() {
     val accent = Color(themePrefs.accentColor)
     val textColor = Color(themePrefs.textColor)
     
-    // 如果背景是純黑，讓對話框的底色稍微亮一點，避免融合看不清
     val surfaceColor = if (bgColor == Color.Black) Color(0xFF1E1E1E) else bgColor
 
-    // 自定義 Material 顏色方案，強制文字與圖標使用主題設定的文字顏色
     val customColorScheme = darkColorScheme(
         primary = accent,
         onPrimary = Color.White,
@@ -263,6 +279,7 @@ fun AppRoot() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppContent(themePrefs: ThemePrefs) {
     val context = LocalContext.current
@@ -296,6 +313,10 @@ fun AppContent(themePrefs: ThemePrefs) {
     // 導航
     var viewMode by remember { mutableStateOf<ViewMode>(ViewMode.Home) }
     var showSettings by remember { mutableStateOf(false) }
+
+    // 全屏播放頁 (BottomSheet)
+    var showPlayerSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // 背景
     var backgroundUri by remember { mutableStateOf<Uri?>(null) }
@@ -515,6 +536,7 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
         controller.prepare()
         controller.play()
+        showPlayerSheet = true // 點擊歌曲後自動彈出播放頁
     }
 
     fun cyclePlayMode() {
@@ -548,7 +570,7 @@ fun AppContent(themePrefs: ThemePrefs) {
         }
     }
 
-    // ---------- 主體（全局背景修復） ----------
+    // ---------- 主體 ----------
     Box(Modifier.fillMaxSize()) {
         // 1. 全局背景層
         if (backgroundUri != null) {
@@ -558,16 +580,13 @@ fun AppContent(themePrefs: ThemePrefs) {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().blur(blurRadius.dp)
             )
-            // 使用自訂明亮度來控制遮罩的黑度 (1f - brightness)
-            // 亮度為 100% 時遮罩全透明，亮度為 0% 時遮罩全黑
             val maskAlpha = 1f - brightness
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = maskAlpha)))
         } else {
-            // 若無背景圖，套用主題顏色
             Box(Modifier.fillMaxSize().background(bgColor))
         }
 
-        // 2. 內容層（所有頁面內部透明，透出底層背景）
+        // 2. 內容層
         if (showSettings) {
             SettingsScreen(
                 backgroundUri = backgroundUri,
@@ -640,7 +659,7 @@ fun AppContent(themePrefs: ThemePrefs) {
                     }
                 }
 
-                // 讓底部播放條在有背景時也有稍微透明的效果（修復括號位置）
+                // 點擊底部播放條也能打開全屏播放頁
                 val barAlpha = ((1f - brightness) + 0.3f).coerceIn(0f, 1f)
                 val barBg = if (backgroundUri != null) Color.Black.copy(alpha = barAlpha) else MaterialTheme.colorScheme.background
                 BottomPlayerBar(
@@ -653,6 +672,7 @@ fun AppContent(themePrefs: ThemePrefs) {
                     isDragging = isDragging,
                     dragMs = dragMs,
                     backgroundColor = barBg,
+                    onBarClick = { if (currentSong != null) showPlayerSheet = true },
                     onDragChange = { v ->
                         isDragging = true
                         dragMs = v
@@ -666,6 +686,40 @@ fun AppContent(themePrefs: ThemePrefs) {
                     onCyclePlayMode = { cyclePlayMode() }
                 )
             }
+        }
+    }
+
+    // ---------- 全屏播放 BottomSheet ----------
+    if (showPlayerSheet && currentSong != null) {
+        ModalBottomSheet(
+            onDismissRequest = { showPlayerSheet = false },
+            sheetState = sheetState,
+            containerColor = Color.Transparent, // 讓底層背景透出來
+            scrimColor = Color.Black.copy(alpha = 0.5f),
+            dragHandle = null // 隱藏默認的拖拽手柄
+        ) {
+            PlayerSheetContent(
+                player = controller,
+                currentSong = currentSong,
+                isPlaying = isPlaying,
+                playMode = playMode,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                isDragging = isDragging,
+                dragMs = dragMs,
+                onDismiss = { showPlayerSheet = false },
+                onDragChange = { v ->
+                    isDragging = true
+                    dragMs = v
+                },
+                onDragFinish = {
+                    controller.seekTo(dragMs.toLong())
+                    positionMs = dragMs.toLong()
+                    isDragging = false
+                    if (!controller.isPlaying) controller.play()
+                },
+                onCyclePlayMode = { cyclePlayMode() }
+            )
         }
     }
 
@@ -796,6 +850,294 @@ fun AppContent(themePrefs: ThemePrefs) {
 }
 
 /* ============================================================
+ * 全屏播放頁面 UI
+ * ============================================================ */
+@Composable
+fun PlayerSheetContent(
+    player: Player,
+    currentSong: Song,
+    isPlaying: Boolean,
+    playMode: PlayMode,
+    positionMs: Long,
+    durationMs: Long,
+    isDragging: Boolean,
+    dragMs: Float,
+    onDismiss: () -> Unit,
+    onDragChange: (Float) -> Unit,
+    onDragFinish: () -> Unit,
+    onCyclePlayMode: () -> Unit
+) {
+    val onBg = MaterialTheme.colorScheme.onBackground
+    val accent = MaterialTheme.colorScheme.primary
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+    ) {
+        // 頂部導航
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.KeyboardArrowDown, "收起", tint = onBg, modifier = Modifier.size(32.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "正在播放",
+                color = onBg,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { /* 分享 */ }) {
+                Icon(Icons.Default.Share, "分享", tint = onBg, modifier = Modifier.size(24.dp))
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        // 黑膠唱片旋轉區塊
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            VinylRecord(isPlaying = isPlaying)
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        // 歌曲信息
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    currentSong.title,
+                    color = onBg,
+                    style = MaterialTheme.typography.headlineSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Start
+                )
+                Text(
+                    currentSong.artist,
+                    color = onBg.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = { /* 收藏 */ }) {
+                Icon(Icons.Default.Favorite, "收藏", tint = accent)
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // 進度條
+        val sliderMax = durationMs.coerceAtLeast(1L).toFloat()
+        val sliderValue = (if (isDragging) dragMs else positionMs.toFloat())
+            .coerceIn(0f, sliderMax)
+
+        Slider(
+            value = sliderValue,
+            onValueChange = onDragChange,
+            onValueChangeFinished = onDragFinish,
+            valueRange = 0f..sliderMax,
+            modifier = Modifier.fillMaxWidth(),
+            colors = SliderDefaults.colors(
+                thumbColor = accent,
+                activeTrackColor = accent
+            )
+        )
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                formatMs(if (isDragging) dragMs.toLong() else positionMs),
+                color = onBg.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                formatMs(durationMs),
+                color = onBg.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // 控制按鈕
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 播放模式
+            IconButton(onClick = onCyclePlayMode) {
+                val (icon, label) = when (playMode) {
+                    PlayMode.REPEAT_ONE -> Icons.Default.RepeatOne to "單曲循環"
+                    PlayMode.REPEAT_ALL -> Icons.Default.Repeat to "歌單循環"
+                    PlayMode.PLAY_ONCE -> Icons.Default.Repeat to "只播一次"
+                }
+                val tint = if (playMode == PlayMode.PLAY_ONCE) onBg.copy(alpha = 0.5f) else accent
+                Icon(icon, label, tint = tint, modifier = Modifier.size(28.dp))
+            }
+
+            // 上一首
+            IconButton(onClick = {
+                if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
+            }) {
+                Icon(
+                    Icons.Default.SkipPrevious,
+                    "上一首",
+                    tint = onBg,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+
+            // 播放/暫停 (大按鈕)
+            Box(
+                Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(onBg)
+                    .clickable {
+                        if (player.isPlaying) player.pause() else player.play()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    "播放/暫停",
+                    tint = MaterialTheme.colorScheme.background,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+
+            // 下一首
+            IconButton(onClick = {
+                if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+            }) {
+                Icon(
+                    Icons.Default.SkipNext,
+                    "下一首",
+                    tint = onBg,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+
+            // 均衡器/佔位
+            IconButton(onClick = { /* 均衡器 */ }) {
+                Icon(
+                    Icons.Default.QueueMusic,
+                    "播放列表",
+                    tint = onBg.copy(alpha = 0.7f),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+    }
+}
+
+/* ============================================================
+ * 黑膠唱片組件
+ * ============================================================ */
+@Composable
+fun VinylRecord(isPlaying: Boolean) {
+    val rotation = remember { Animatable(0f) }
+    val accent = MaterialTheme.colorScheme.primary
+    val onBg = MaterialTheme.colorScheme.onBackground
+
+    // 旋轉動畫：暫停時停止，播放時一直旋轉
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                val remaining = 360f - (rotation.value % 360f)
+                rotation.animateTo(
+                    targetValue = rotation.value + remaining + 360f,
+                    animationSpec = tween(
+                        durationMillis = ((remaining + 360f) * 10).toInt(),
+                        easing = LinearEasing
+                    )
+                )
+            }
+        }
+    }
+
+    Box(
+        Modifier
+            .size(280.dp)
+            .rotate(rotation.value),
+        contentAlignment = Alignment.Center
+    ) {
+        // 黑膠唱片背景
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            // 底色
+            drawCircle(color = Color(0xFF1A1A1A))
+
+            // 黑膠紋路
+            val center = Offset(size.width / 2, size.height / 2)
+            val maxRadius = size.width / 2
+            for (i in 1..10) {
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.05f),
+                    radius = maxRadius * (i / 10f),
+                    center = center,
+                    style = Stroke(width = 2f)
+                )
+            }
+
+            // 反光高光
+            drawArc(
+                color = Color.White.copy(alpha = 0.1f),
+                startAngle = 45f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = Offset(10f, 10f),
+                size = androidx.compose.ui.geometry.Size(size.width - 20f, size.height - 20f),
+                style = Stroke(width = 20f)
+            )
+        }
+
+        // 中間的專輯封面 (如果沒有圖片，用主題色與音符代替)
+        Box(
+            Modifier
+                .size(120.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(accent.copy(alpha = 0.8f), accent.copy(alpha = 0.4f))
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.MusicNote,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(48.dp)
+            )
+        }
+        
+        // 中心孔
+        Box(
+            Modifier
+                .size(16.dp)
+                .clip(CircleShape)
+                .background(Color.Black)
+        )
+    }
+}
+
+/* ============================================================
  * 主頁：歌單列表
  * ============================================================ */
 @Composable
@@ -835,11 +1177,7 @@ private fun PlaylistListContent(
                     DropdownMenuItem(
                         text = { Text("匯入音頻") },
                         leadingIcon = {
-                            Icon(
-                                Icons.Default.MusicNote,
-                                contentDescription = null,
-                                tint = accent
-                            )
+                            Icon(Icons.Default.MusicNote, null, tint = accent)
                         },
                         onClick = {
                             showAddMenu = false
@@ -849,11 +1187,7 @@ private fun PlaylistListContent(
                     DropdownMenuItem(
                         text = { Text("建立歌單") },
                         leadingIcon = {
-                            Icon(
-                                Icons.Default.QueueMusic,
-                                contentDescription = null,
-                                tint = accent
-                            )
+                            Icon(Icons.Default.QueueMusic, null, tint = accent)
                         },
                         onClick = {
                             showAddMenu = false
@@ -1069,7 +1403,7 @@ private fun SongListContent(
 }
 
 /* ============================================================
- * 歌曲列（含 ⋮ 選單 + 呼吸發光特效）
+ * 歌曲列
  * ============================================================ */
 @Composable
 private fun SongRow(
@@ -1174,6 +1508,7 @@ private fun BottomPlayerBar(
     isDragging: Boolean,
     dragMs: Float,
     backgroundColor: Color,
+    onBarClick: () -> Unit,
     onDragChange: (Float) -> Unit,
     onDragFinish: () -> Unit,
     onCyclePlayMode: () -> Unit
@@ -1188,13 +1523,20 @@ private fun BottomPlayerBar(
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Text(
-            text = currentSong?.let { "正在播放：${it.title}" } ?: "尚未播放",
-            color = if (currentSong != null) onBg else onBg.copy(alpha = 0.5f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyMedium
-        )
+        // 點擊頂部打開全屏
+        Row(
+            Modifier.fillMaxWidth().clickable { onBarClick() },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = currentSong?.let { "正在播放：${it.title}" } ?: "尚未播放",
+                color = if (currentSong != null) onBg else onBg.copy(alpha = 0.5f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
         val sliderMax = durationMs.coerceAtLeast(1L).toFloat()
         val sliderValue = (if (isDragging) dragMs else positionMs.toFloat())
@@ -1281,7 +1623,7 @@ private fun BottomPlayerBar(
 }
 
 /* ============================================================
- * 建立歌單對話框
+ * 其餘組件保持不變
  * ============================================================ */
 @Composable
 private fun CreatePlaylistDialog(
@@ -1353,9 +1695,6 @@ private fun CreatePlaylistDialog(
     )
 }
 
-/* ============================================================
- * 匯入後選擇加入哪個歌單
- * ============================================================ */
 @Composable
 private fun ImportToPlaylistDialog(
     pickedCount: Int,
@@ -1428,9 +1767,6 @@ private fun ImportToPlaylistDialog(
     )
 }
 
-/* ============================================================
- * 設置
- * ============================================================ */
 private enum class SettingsSubPage { MAIN, BACKGROUND, THEME, EQUALIZER }
 
 @Composable
@@ -1616,7 +1952,6 @@ private fun BackgroundSettingsPage(
 
         Spacer(Modifier.height(24.dp))
 
-        // 背景模糊滑桿
         Text("背景模糊 ${pendingBlur.toInt()} dp", color = MaterialTheme.colorScheme.onBackground)
         Slider(
             value = pendingBlur,
@@ -1629,7 +1964,6 @@ private fun BackgroundSettingsPage(
 
         Spacer(Modifier.height(16.dp))
 
-        // 明亮度滑桿
         Text("明亮度 ${(pendingBrightness * 100).toInt()}%", color = MaterialTheme.colorScheme.onBackground)
         Slider(
             value = pendingBrightness,
@@ -1658,7 +1992,6 @@ private fun BackgroundSettingsPage(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().blur(pendingBlur.dp)
                 )
-                // 預覽區塊也套用遮罩
                 val maskAlpha = 1f - pendingBrightness
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = maskAlpha)))
             } else {
@@ -1668,9 +2001,6 @@ private fun BackgroundSettingsPage(
     }
 }
 
-/* ============================================================
- * 主題設定頁面
- * ============================================================ */
 @Composable
 private fun ThemeSettingsPage(
     themePrefs: ThemePrefs,
@@ -1710,7 +2040,6 @@ private fun ThemeSettingsPage(
 
         Spacer(Modifier.height(24.dp))
 
-        // ================= 背景顏色 =================
         Text("背景顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         HsvColorPicker(
@@ -1720,7 +2049,6 @@ private fun ThemeSettingsPage(
 
         Spacer(Modifier.height(32.dp))
 
-        // ================= 呼吸發光特效顏色 =================
         Text("呼吸發光特效顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         HsvColorPicker(
@@ -1730,7 +2058,6 @@ private fun ThemeSettingsPage(
 
         Spacer(Modifier.height(32.dp))
 
-        // ================= 文字顏色 =================
         Text("文字顏色", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         HsvColorPicker(
@@ -1740,7 +2067,6 @@ private fun ThemeSettingsPage(
 
         Spacer(Modifier.height(32.dp))
 
-        // ================= 預覽（獨立純色區域，保持對顏色的準確預覽） =================
         Text("預覽", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
         Box(
@@ -1793,9 +2119,6 @@ private fun ThemeSettingsPage(
     }
 }
 
-/* ============================================================
- * 自定義 HSV 色彩選擇器
- * ============================================================ */
 @Composable
 private fun HsvColorPicker(
     initialColor: Color,
