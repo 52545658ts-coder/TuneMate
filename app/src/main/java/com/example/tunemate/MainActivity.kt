@@ -26,6 +26,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,7 +66,6 @@ import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.AlertDialog
@@ -131,6 +131,7 @@ import com.example.tunemate.data.playbackStateFlow
 import com.example.tunemate.data.playlistsFlow
 import com.example.tunemate.data.saveBackground
 import com.example.tunemate.data.saveBackgroundImage
+import com.example.tunemate.data.saveCoverImage
 import com.example.tunemate.data.savePlaybackState
 import com.example.tunemate.data.savePlaylists
 import com.example.tunemate.data.saveSongs
@@ -322,6 +323,38 @@ fun AppContent(themePrefs: ThemePrefs) {
     // 新增的對話框狀態
     var songToRename by remember { mutableStateOf<Song?>(null) }
     var songToAddToPlaylist by remember { mutableStateOf<Song?>(null) }
+    var songToSetCover by remember { mutableStateOf<Song?>(null) }
+
+    // 封面選擇器
+    val coverLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        val targetSong = songToSetCover
+        if (uri != null && targetSong != null) {
+            scope.launch {
+                val savedCoverUri = context.saveCoverImage(uri, targetSong.id)
+                if (savedCoverUri != null) {
+                    // 1. 更新所有歌曲
+                    val curSongs = context.songsFlow().first()
+                    context.saveSongs(curSongs.map {
+                        if (it.uriString == targetSong.uriString) it.copy(coverUriString = savedCoverUri) else it
+                    })
+                    // 2. 更新歌單
+                    val curPlaylists = context.playlistsFlow().first()
+                    context.savePlaylists(curPlaylists.map { pl ->
+                        pl.copy(songs = pl.songs.map {
+                            if (it.uriString == targetSong.uriString) it.copy(coverUriString = savedCoverUri) else it
+                        })
+                    })
+                    // 3. 更新當前播放狀態
+                    if (currentSong?.uriString == targetSong.uriString) {
+                        currentSong = currentSong?.copy(coverUriString = savedCoverUri)
+                    }
+                }
+            }
+        }
+        songToSetCover = null
+    }
 
     // 播放進度
     var positionMs by remember { mutableLongStateOf(0L) }
@@ -727,7 +760,12 @@ fun AppContent(themePrefs: ThemePrefs) {
                             isDragging = false
                             if (!controller.isPlaying) controller.play()
                         },
-                        onCyclePlayMode = { cyclePlayMode() }
+                        onCyclePlayMode = { cyclePlayMode() },
+                        onRename = { songToRename = song },
+                        onSetCover = { 
+                            songToSetCover = song
+                            coverLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
                     )
                 }
             }
@@ -997,10 +1035,13 @@ fun PlayerSheetContent(
     onDismiss: () -> Unit,
     onDragChange: (Float) -> Unit,
     onDragFinish: () -> Unit,
-    onCyclePlayMode: () -> Unit
+    onCyclePlayMode: () -> Unit,
+    onRename: () -> Unit,
+    onSetCover: () -> Unit
 ) {
     val onBg = MaterialTheme.colorScheme.onBackground
     val accent = MaterialTheme.colorScheme.primary
+    var menuExpanded by remember { mutableStateOf(false) }
 
     Column(
         Modifier
@@ -1008,6 +1049,7 @@ fun PlayerSheetContent(
             .safeDrawingPadding()
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
+        // 頂部導航
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -1022,24 +1064,48 @@ fun PlayerSheetContent(
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { /* 分享 */ }) {
-                Icon(Icons.Default.Share, "分享", tint = onBg, modifier = Modifier.size(24.dp))
+            // 右上角的三點菜單
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, "更多", tint = onBg, modifier = Modifier.size(24.dp))
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("重新命名") },
+                        onClick = {
+                            menuExpanded = false
+                            onRename()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("設置專輯封面") },
+                        onClick = {
+                            menuExpanded = false
+                            onSetCover()
+                        }
+                    )
+                }
             }
         }
 
         Spacer(Modifier.height(32.dp))
 
+        // 黑膠唱片旋轉區塊
         Box(
             Modifier
                 .fillMaxWidth()
                 .weight(1f),
             contentAlignment = Alignment.Center
         ) {
-            VinylRecord(isPlaying = isPlaying)
+            VinylRecord(isPlaying = isPlaying, coverUri = currentSong.coverUriString)
         }
 
         Spacer(Modifier.height(32.dp))
 
+        // 歌曲信息
         Column(
             Modifier.fillMaxWidth()
         ) {
@@ -1062,6 +1128,7 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(24.dp))
 
+        // 進度條
         val sliderMax = durationMs.coerceAtLeast(1L).toFloat()
         val sliderValue = (if (isDragging) dragMs else positionMs.toFloat())
             .coerceIn(0f, sliderMax)
@@ -1096,6 +1163,7 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(24.dp))
 
+        // 控制按鈕
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -1157,10 +1225,10 @@ fun PlayerSheetContent(
 }
 
 /* ============================================================
- * 黑膠唱片組件
+ * 黑膠唱片組件（支援專輯封面）
  * ============================================================ */
 @Composable
-fun VinylRecord(isPlaying: Boolean) {
+fun VinylRecord(isPlaying: Boolean, coverUri: String?) {
     val rotation = remember { Animatable(0f) }
     val accent = MaterialTheme.colorScheme.primary
 
@@ -1210,21 +1278,34 @@ fun VinylRecord(isPlaying: Boolean) {
             )
         }
 
-        Box(
-            Modifier
-                .size(140.dp)
-                .clip(CircleShape)
-                .background(accent.copy(alpha = 0.8f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Default.MusicNote,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.8f),
-                modifier = Modifier.size(60.dp)
+        // 專輯封面或預設圖標
+        if (coverUri != null) {
+            AsyncImage(
+                model = coverUri,
+                contentDescription = "專輯封面",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(140.dp)
+                    .clip(CircleShape)
             )
+        } else {
+            Box(
+                Modifier
+                    .size(140.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.8f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(60.dp)
+                )
+            }
         }
         
+        // 中心孔
         Box(
             Modifier
                 .size(20.dp)
