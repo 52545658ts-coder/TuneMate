@@ -17,12 +17,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +34,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -72,12 +77,10 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -86,7 +89,6 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -271,7 +273,6 @@ fun AppRoot() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppContent(themePrefs: ThemePrefs) {
     val context = LocalContext.current
@@ -306,9 +307,8 @@ fun AppContent(themePrefs: ThemePrefs) {
     var viewMode by remember { mutableStateOf<ViewMode>(ViewMode.Home) }
     var showSettings by remember { mutableStateOf(false) }
 
-    // 全屏播放頁 (BottomSheet)
+    // 全屏播放頁
     var showPlayerSheet by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // 背景
     var backgroundUri by remember { mutableStateOf<Uri?>(null) }
@@ -492,9 +492,11 @@ fun AppContent(themePrefs: ThemePrefs) {
         onDispose { c.removeListener(listener) }
     }
 
-    // 返回鍵
-    BackHandler(enabled = !showSettings && viewMode != ViewMode.Home) {
-        viewMode = ViewMode.Home
+    // 返回鍵：關閉全屏頁面或返回首頁
+    BackHandler(enabled = showPlayerSheet || showSettings || viewMode != ViewMode.Home) {
+        if (showPlayerSheet) showPlayerSheet = false
+        else if (showSettings) showSettings = false
+        else viewMode = ViewMode.Home
     }
 
     if (controller == null) {
@@ -578,7 +580,7 @@ fun AppContent(themePrefs: ThemePrefs) {
             Box(Modifier.fillMaxSize().background(bgColor))
         }
 
-        // 2. 內容層
+        // 2. 基礎頁面 (設定頁 或 列表頁)
         if (showSettings) {
             SettingsScreen(
                 backgroundUri = backgroundUri,
@@ -651,7 +653,7 @@ fun AppContent(themePrefs: ThemePrefs) {
                     }
                 }
 
-                // 點擊底部播放條也能打開全屏播放頁
+                // 底部播放條 (點擊打開全屏)
                 val barAlpha = ((1f - brightness) + 0.3f).coerceIn(0f, 1f)
                 val barBg = if (backgroundUri != null) Color.Black.copy(alpha = barAlpha) else MaterialTheme.colorScheme.background
                 BottomPlayerBar(
@@ -679,40 +681,55 @@ fun AppContent(themePrefs: ThemePrefs) {
                 )
             }
         }
-    }
 
-    // ---------- 全屏播放 BottomSheet ----------
-    val songForSheet = currentSong
-    if (showPlayerSheet && songForSheet != null) {
-        ModalBottomSheet(
-            onDismissRequest = { showPlayerSheet = false },
-            sheetState = sheetState,
-            containerColor = Color.Transparent, // 讓底層背景透出來
-            scrimColor = Color.Black.copy(alpha = 0.5f),
-            dragHandle = null // 隱藏默認的拖拽手柄
+        // 3. 全屏播放頁面 (滑出覆蓋，使用 AnimatedVisibility 避免 Modal 的佈局衝突)
+        AnimatedVisibility(
+            visible = showPlayerSheet && currentSong != null,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it })
         ) {
-            PlayerSheetContent(
-                player = controller,
-                currentSong = songForSheet,
-                isPlaying = isPlaying,
-                playMode = playMode,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                isDragging = isDragging,
-                dragMs = dragMs,
-                onDismiss = { showPlayerSheet = false },
-                onDragChange = { v ->
-                    isDragging = true
-                    dragMs = v
-                },
-                onDragFinish = {
-                    controller.seekTo(dragMs.toLong())
-                    positionMs = dragMs.toLong()
-                    isDragging = false
-                    if (!controller.isPlaying) controller.play()
-                },
-                onCyclePlayMode = { cyclePlayMode() }
-            )
+            if (currentSong != null) {
+                // 全屏背景層：如果有背景圖則用深色遮罩覆蓋，否則用主題色
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background) // 預設底色
+                ) {
+                    if (backgroundUri != null) {
+                        AsyncImage(
+                            model = backgroundUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().blur(blurRadius.dp)
+                        )
+                        // 全屏播放頁的背景遮罩要更深，確保按鈕清晰
+                        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)))
+                    }
+
+                    PlayerSheetContent(
+                        player = controller,
+                        currentSong = currentSong,
+                        isPlaying = isPlaying,
+                        playMode = playMode,
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        isDragging = isDragging,
+                        dragMs = dragMs,
+                        onDismiss = { showPlayerSheet = false },
+                        onDragChange = { v ->
+                            isDragging = true
+                            dragMs = v
+                        },
+                        onDragFinish = {
+                            controller.seekTo(dragMs.toLong())
+                            positionMs = dragMs.toLong()
+                            isDragging = false
+                            if (!controller.isPlaying) controller.play()
+                        },
+                        onCyclePlayMode = { cyclePlayMode() }
+                    )
+                }
+            }
         }
     }
 
@@ -1027,8 +1044,8 @@ fun PlayerSheetContent(
                 )
             }
 
-            // 均衡器/佔位
-            IconButton(onClick = { /* 均衡器 */ }) {
+            // 佔位按鈕（例如打開播放列表）
+            IconButton(onClick = { /* 播放列表 */ }) {
                 Icon(
                     Icons.Default.QueueMusic,
                     "播放列表",
@@ -1037,6 +1054,8 @@ fun PlayerSheetContent(
                 )
             }
         }
+        
+        Spacer(Modifier.height(16.dp))
     }
 }
 
@@ -1047,7 +1066,6 @@ fun PlayerSheetContent(
 fun VinylRecord(isPlaying: Boolean) {
     val rotation = remember { Animatable(0f) }
     val accent = MaterialTheme.colorScheme.primary
-    val onBg = MaterialTheme.colorScheme.onBackground
 
     // 旋轉動畫：暫停時停止，播放時一直旋轉
     LaunchedEffect(isPlaying) {
@@ -1079,10 +1097,10 @@ fun VinylRecord(isPlaying: Boolean) {
             // 黑膠紋路
             val center = Offset(size.width / 2, size.height / 2)
             val maxRadius = size.width / 2
-            for (i in 1..10) {
+            for (i in 1..15) {
                 drawCircle(
-                    color = Color.White.copy(alpha = 0.05f),
-                    radius = maxRadius * (i / 10f),
+                    color = Color.White.copy(alpha = 0.03f),
+                    radius = maxRadius * (i / 15f),
                     center = center,
                     style = Stroke(width = 2f)
                 )
@@ -1090,7 +1108,7 @@ fun VinylRecord(isPlaying: Boolean) {
 
             // 反光高光
             drawArc(
-                color = Color.White.copy(alpha = 0.1f),
+                color = Color.White.copy(alpha = 0.08f),
                 startAngle = 45f,
                 sweepAngle = 90f,
                 useCenter = false,
@@ -1100,30 +1118,27 @@ fun VinylRecord(isPlaying: Boolean) {
             )
         }
 
-        // 中間的專輯封面 (如果沒有圖片，用主題色與音符代替)
+        // 中間的專輯封面區域 (直徑 140dp，作為底色)
         Box(
             Modifier
-                .size(120.dp)
+                .size(140.dp)
                 .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(accent.copy(alpha = 0.8f), accent.copy(alpha = 0.4f))
-                    )
-                ),
+                .background(accent.copy(alpha = 0.8f)), // 用主題色代替封面圖
             contentAlignment = Alignment.Center
         ) {
+            // 可以用 Icon 裝飾，也可以留空，現在放一個精緻的音符
             Icon(
                 Icons.Default.MusicNote,
                 contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(48.dp)
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(60.dp)
             )
         }
         
-        // 中心孔
+        // 中心孔 (直徑 20dp)
         Box(
             Modifier
-                .size(16.dp)
+                .size(20.dp)
                 .clip(CircleShape)
                 .background(Color.Black)
         )
