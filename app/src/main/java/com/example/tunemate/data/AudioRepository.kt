@@ -11,20 +11,21 @@ import com.example.tunemate.model.Song
  * 從使用者透過 SAF（Storage Access Framework）選擇的音頻 Uri 建立 Song。
  *
  * 使用 MediaMetadataRetriever 讀取標題 / 演出者 / 時長；
- * 若讀不到標題，退回檔案顯示名稱。
- *
- * id 使用 uri.hashCode() 作為穩定標識（僅用於 UI key / 去重輔助，
- * 真正判斷同一首歌仍以 uriString 為準）。
+ * 若讀不到標題，退回檔案顯示名稱，並去除副檔名。
  */
 fun buildSongFromUri(context: Context, uri: Uri): Song? {
     val mmr = MediaMetadataRetriever()
     return try {
         mmr.setDataSource(context, uri)
 
-        val title = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+        // 優先讀取音檔內嵌標題，若無則使用檔案名稱
+        val rawTitle = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
             ?.takeIf { it.isNotBlank() }
             ?: queryDisplayName(context.contentResolver, uri)
             ?: "未知曲目"
+
+        // 去除檔案副檔名（例如 .mp3, .flac, .wav）
+        val title = removeExtension(rawTitle)
 
         val artist = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
             ?.takeIf { it.isNotBlank() }
@@ -59,3 +60,17 @@ private fun queryDisplayName(resolver: ContentResolver, uri: Uri): String? =
             }
         }
     }.getOrNull()
+
+/**
+ * 移除字串結尾的副檔名。
+ * 為了避免誤刪（例如 "Track.01"），我們限制副檔名長度不能超過 5 個字元。
+ */
+private fun removeExtension(fileName: String): String {
+    val lastDotIndex = fileName.lastIndexOf('.')
+    // 如果找到點，且點不在開頭，且點後面的長度 <= 5（例如 .mp3, .flac, .m4a）
+    return if (lastDotIndex > 0 && fileName.length - lastDotIndex <= 6) {
+        fileName.substring(0, lastDotIndex)
+    } else {
+        fileName
+    }
+}
