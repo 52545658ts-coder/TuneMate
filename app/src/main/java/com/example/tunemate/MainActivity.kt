@@ -26,6 +26,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,7 +56,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Equalizer
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
@@ -238,7 +239,7 @@ private fun rememberMediaController(context: Context): MediaController? {
 }
 
 /* ============================================================
- * 根 UI（動態主題封裝）
+ * 根 UI
  * ============================================================ */
 @Composable
 fun AppRoot() {
@@ -250,10 +251,8 @@ fun AppRoot() {
     val accent = Color(themePrefs.accentColor)
     val textColor = Color(themePrefs.textColor)
     
-    // 如果背景是純黑，讓對話框的底色稍微亮一點，避免融合看不清
     val surfaceColor = if (bgColor == Color.Black) Color(0xFF1E1E1E) else bgColor
 
-    // 自定義 Material 顏色方案，強制文字與圖標使用主題設定的文字顏色
     val customColorScheme = darkColorScheme(
         primary = accent,
         onPrimary = Color.White,
@@ -682,16 +681,13 @@ fun AppContent(themePrefs: ThemePrefs) {
             }
         }
 
-        // 3. 全屏播放頁面 (滑出覆蓋，使用 AnimatedVisibility 避免 Modal 的佈局衝突)
+        // 3. 全屏播放頁面
         AnimatedVisibility(
             visible = showPlayerSheet && currentSong != null,
             enter = slideInVertically(initialOffsetY = { it }),
             exit = slideOutVertically(targetOffsetY = { it })
         ) {
-            // 使用局部變量解決智能轉換問題
-            val song = currentSong
-            if (song != null) {
-                // 全屏背景層：如果有背景圖則用深色遮罩覆蓋，否則用主題色
+            if (currentSong != null) {
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -704,13 +700,12 @@ fun AppContent(themePrefs: ThemePrefs) {
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize().blur(blurRadius.dp)
                         )
-                        // 全屏播放頁的背景遮罩要更深，確保按鈕清晰
                         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)))
                     }
 
                     PlayerSheetContent(
                         player = controller,
-                        currentSong = song,
+                        currentSong = currentSong,
                         isPlaying = isPlaying,
                         playMode = playMode,
                         positionMs = positionMs,
@@ -922,31 +917,25 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(32.dp))
 
-        // 歌曲信息
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        // 歌曲信息 (移除了心形按鈕)
+        Column(
+            Modifier.fillMaxWidth()
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    currentSong.title,
-                    color = onBg,
-                    style = MaterialTheme.typography.headlineSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Start
-                )
-                Text(
-                    currentSong.artist,
-                    color = onBg.copy(alpha = 0.6f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            IconButton(onClick = { /* 收藏 */ }) {
-                Icon(Icons.Default.Favorite, "收藏", tint = accent)
-            }
+            Text(
+                currentSong.title,
+                color = onBg,
+                style = MaterialTheme.typography.headlineSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Start
+            )
+            Text(
+                currentSong.artist,
+                color = onBg.copy(alpha = 0.6f),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
         Spacer(Modifier.height(24.dp))
@@ -992,17 +981,6 @@ fun PlayerSheetContent(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 播放模式
-            IconButton(onClick = onCyclePlayMode) {
-                val (icon, label) = when (playMode) {
-                    PlayMode.REPEAT_ONE -> Icons.Default.RepeatOne to "單曲循環"
-                    PlayMode.REPEAT_ALL -> Icons.Default.Repeat to "歌單循環"
-                    PlayMode.PLAY_ONCE -> Icons.Default.Repeat to "只播一次"
-                }
-                val tint = if (playMode == PlayMode.PLAY_ONCE) onBg.copy(alpha = 0.5f) else accent
-                Icon(icon, label, tint = tint, modifier = Modifier.size(28.dp))
-            }
-
             // 上一首
             IconButton(onClick = {
                 if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
@@ -1046,14 +1024,15 @@ fun PlayerSheetContent(
                 )
             }
 
-            // 佔位按鈕（例如打開播放列表）
-            IconButton(onClick = { /* 播放列表 */ }) {
-                Icon(
-                    Icons.Default.QueueMusic,
-                    "播放列表",
-                    tint = onBg.copy(alpha = 0.7f),
-                    modifier = Modifier.size(28.dp)
-                )
+            // 播放模式 (已移到最右側)
+            IconButton(onClick = onCyclePlayMode) {
+                val (icon, label) = when (playMode) {
+                    PlayMode.REPEAT_ONE -> Icons.Default.RepeatOne to "單曲循環"
+                    PlayMode.REPEAT_ALL -> Icons.Default.Repeat to "歌單循環"
+                    PlayMode.PLAY_ONCE -> Icons.Default.Repeat to "只播一次"
+                }
+                val tint = if (playMode == PlayMode.PLAY_ONCE) onBg.copy(alpha = 0.5f) else accent
+                Icon(icon, label, tint = tint, modifier = Modifier.size(28.dp))
             }
         }
         
@@ -1120,15 +1099,14 @@ fun VinylRecord(isPlaying: Boolean) {
             )
         }
 
-        // 中間的專輯封面區域 (直徑 140dp，作為底色)
+        // 中間的專輯封面區域
         Box(
             Modifier
                 .size(140.dp)
                 .clip(CircleShape)
-                .background(accent.copy(alpha = 0.8f)), // 用主題色代替封面圖
+                .background(accent.copy(alpha = 0.8f)),
             contentAlignment = Alignment.Center
         ) {
-            // 可以用 Icon 裝飾，也可以留空，現在放一個精緻的音符
             Icon(
                 Icons.Default.MusicNote,
                 contentDescription = null,
@@ -1137,7 +1115,7 @@ fun VinylRecord(isPlaying: Boolean) {
             )
         }
         
-        // 中心孔 (直徑 20dp)
+        // 中心孔
         Box(
             Modifier
                 .size(20.dp)
