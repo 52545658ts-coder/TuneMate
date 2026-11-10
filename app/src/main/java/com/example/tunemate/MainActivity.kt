@@ -26,7 +26,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +33,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -240,7 +238,7 @@ private fun rememberMediaController(context: Context): MediaController? {
 }
 
 /* ============================================================
- * 根 UI
+ * 根 UI（動態主題封裝）
  * ============================================================ */
 @Composable
 fun AppRoot() {
@@ -252,8 +250,10 @@ fun AppRoot() {
     val accent = Color(themePrefs.accentColor)
     val textColor = Color(themePrefs.textColor)
     
+    // 如果背景是純黑，讓對話框的底色稍微亮一點，避免融合看不清
     val surfaceColor = if (bgColor == Color.Black) Color(0xFF1E1E1E) else bgColor
 
+    // 自定義 Material 顏色方案，強制文字與圖標使用主題設定的文字顏色
     val customColorScheme = darkColorScheme(
         primary = accent,
         onPrimary = Color.White,
@@ -688,7 +688,9 @@ fun AppContent(themePrefs: ThemePrefs) {
             enter = slideInVertically(initialOffsetY = { it }),
             exit = slideOutVertically(targetOffsetY = { it })
         ) {
-            if (currentSong != null) {
+            // 使用局部變量解決智能轉換問題
+            val song = currentSong
+            if (song != null) {
                 // 全屏背景層：如果有背景圖則用深色遮罩覆蓋，否則用主題色
                 Box(
                     Modifier
@@ -708,7 +710,7 @@ fun AppContent(themePrefs: ThemePrefs) {
 
                     PlayerSheetContent(
                         player = controller,
-                        currentSong = currentSong,
+                        currentSong = song,
                         isPlaying = isPlaying,
                         playMode = playMode,
                         positionMs = positionMs,
