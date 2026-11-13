@@ -36,12 +36,10 @@ private val THEME_TEXT_COLOR = longPreferencesKey("theme_text_color")
 
 private val json = Json { ignoreUnknownKeys = true }
 
-// ---------- 預設主題色 ----------
 const val DEFAULT_BG_COLOR: Long = 0xFF0B0B1AL
 const val DEFAULT_ACCENT_COLOR: Long = 0xFF4FC3F7L
 const val DEFAULT_TEXT_COLOR: Long = 0xFFFFFFFFL
 
-// ---------- 已匯入歌曲 ----------
 fun Context.songsFlow(): Flow<List<Song>> = dataStore.data.map { prefs ->
     prefs[SONGS_KEY]?.let {
         runCatching { json.decodeFromString<List<Song>>(it) }.getOrDefault(emptyList())
@@ -52,7 +50,6 @@ suspend fun Context.saveSongs(songs: List<Song>) {
     dataStore.edit { it[SONGS_KEY] = json.encodeToString(songs) }
 }
 
-// ---------- 歌單 ----------
 suspend fun Context.savePlaylists(playlists: List<Playlist>) {
     dataStore.edit { it[PLAYLIST_KEY] = json.encodeToString(playlists) }
 }
@@ -63,7 +60,6 @@ fun Context.playlistsFlow(): Flow<List<Playlist>> = dataStore.data.map { prefs -
     } ?: emptyList()
 }
 
-// ---------- 背景圖 + 模糊度 + 明亮度 ----------
 data class BackgroundPrefs(
     val uri: String?, 
     val blur: Float,
@@ -86,9 +82,10 @@ fun Context.backgroundFlow(): Flow<BackgroundPrefs> = dataStore.data.map { prefs
     )
 }
 
+// ✅ 加入時間戳，強制 Coil 刷新
 suspend fun Context.saveBackgroundImage(sourceUri: Uri): Uri? = withContext(Dispatchers.IO) {
     try {
-        val target = File(filesDir, "background.jpg")
+        val target = File(filesDir, "background_${System.currentTimeMillis()}.jpg")
         contentResolver.openInputStream(sourceUri)?.use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
         }
@@ -98,10 +95,10 @@ suspend fun Context.saveBackgroundImage(sourceUri: Uri): Uri? = withContext(Disp
     }
 }
 
-// ---------- 專輯封面 ----------
+// ✅ 加入時間戳，強制 Coil 刷新
 suspend fun Context.saveCoverImage(sourceUri: Uri, songId: Long): String? = withContext(Dispatchers.IO) {
     try {
-        val target = File(filesDir, "cover_$songId.jpg")
+        val target = File(filesDir, "cover_${songId}_${System.currentTimeMillis()}.jpg")
         contentResolver.openInputStream(sourceUri)?.use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
         }
@@ -111,7 +108,6 @@ suspend fun Context.saveCoverImage(sourceUri: Uri, songId: Long): String? = with
     }
 }
 
-// ---------- 播放狀態 ----------
 data class PlaybackState(
     val songUri: String? = null,
     val playlistName: String? = null,
@@ -137,16 +133,6 @@ suspend fun Context.savePlaybackState(state: PlaybackState) {
     }
 }
 
-suspend fun Context.clearPlaybackState() {
-    dataStore.edit { prefs ->
-        prefs.remove(PB_SONG_URI)
-        prefs.remove(PB_PLAYLIST)
-        prefs.remove(PB_POSITION)
-        prefs.remove(PB_PLAY_MODE)
-    }
-}
-
-// ---------- 主題色 ----------
 data class ThemePrefs(
     val backgroundColor: Long = DEFAULT_BG_COLOR,
     val accentColor: Long = DEFAULT_ACCENT_COLOR,
