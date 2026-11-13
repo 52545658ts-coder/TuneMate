@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -1725,12 +1726,12 @@ private fun BottomPlayerBar(
                 .fillMaxWidth()
                 .navigationBarsPadding()
         ) {
-            // 右側藍色矩形背景 (略低於圓盤)
+            // 右側矩形背景 (避開左側圓盤，並確保高度)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp)
-                    .padding(start = 80.dp) // 避開左側圓盤
+                    .padding(start = 96.dp) // 加大左側邊距，避開變大的圓盤
                     .background(backgroundColor)
                     .align(Alignment.BottomCenter), // 底部對齊
                 verticalAlignment = Alignment.CenterVertically
@@ -1740,7 +1741,7 @@ private fun BottomPlayerBar(
                     modifier = Modifier
                         .weight(1f)
                         .clickable { onBarClick() }
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 8.dp)
                 ) {
                     Text(
                         currentSong.title,
@@ -1775,14 +1776,14 @@ private fun BottomPlayerBar(
                 }
             }
 
-            // 左側圓形專輯封面 (無黑膠邊距，填滿圓形)
+            // 左側圓形專輯封面（超出邊界）
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 16.dp)
-                    .size(80.dp) // 比背景條高，會露出上半部分
-                    .rotate(rotation.value)
-                    .clip(CircleShape)
+                    .align(Alignment.BottomStart) // 對齊左下角
+                    .offset(x = (-32).dp, y = (24).dp) // 往左下偏移，使其溢出邊界
+                    .size(120.dp) // 尺寸加大
+                    .rotate(rotation.value) // 旋轉
+                    .clip(CircleShape) // 保持圓形
                     .clickable { onBarClick() },
                 contentAlignment = Alignment.Center
             ) {
@@ -1805,7 +1806,7 @@ private fun BottomPlayerBar(
                             Icons.Default.MusicNote,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(48.dp)
                         )
                     }
                 }
