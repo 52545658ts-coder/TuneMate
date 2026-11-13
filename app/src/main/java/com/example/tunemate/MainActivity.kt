@@ -1294,57 +1294,6 @@ fun VinylRecord(isPlaying: Boolean, coverUri: String?) {
 }
 
 /* ============================================================
- * 迷你黑膠唱片組件（底部播放條專用）
- * ============================================================ */
-@Composable
-fun MiniVinylRecord(isPlaying: Boolean, coverUri: String?) {
-    val rotation = remember { Animatable(0f) }
-    val accent = MaterialTheme.colorScheme.primary
-
-    LaunchedEffect(isPlaying) {
-        if (isPlaying) {
-            while (true) {
-                val remaining = 360f - (rotation.value % 360f)
-                rotation.animateTo(
-                    targetValue = rotation.value + remaining + 360f,
-                    animationSpec = tween(
-                        durationMillis = ((remaining + 360f) * 5).toInt(), // 轉速快一點
-                        easing = LinearEasing
-                    )
-                )
-            }
-        }
-    }
-
-    Box(
-        Modifier
-            .size(44.dp)
-            .rotate(rotation.value),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(color = Color(0xFF1A1A1A))
-            drawCircle(
-                color = Color.White.copy(alpha = 0.1f),
-                radius = size.width / 2.5f,
-                style = Stroke(width = 1f)
-            )
-        }
-        
-        if (coverUri != null) {
-            AsyncImage(
-                model = coverUri,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(20.dp).clip(CircleShape)
-            )
-        } else {
-            Box(Modifier.size(20.dp).clip(CircleShape).background(accent.copy(alpha = 0.8f)))
-        }
-    }
-}
-
-/* ============================================================
  * 主頁：歌單列表
  * ============================================================ */
 @Composable
@@ -1722,7 +1671,7 @@ private fun SongRow(
 }
 
 /* ============================================================
- * 底部播放控制條（簡約版）
+ * 底部播放控制條（極簡大頭像版）
  * ============================================================ */
 @Composable
 private fun BottomPlayerBar(
@@ -1735,64 +1684,144 @@ private fun BottomPlayerBar(
     val accent = MaterialTheme.colorScheme.primary
     val onBg = MaterialTheme.colorScheme.onBackground
 
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(backgroundColor)
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .height(60.dp), // 固定高度讓它看起來緊湊
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // 左側：黑膠 + 歌曲資訊，點擊展開全螢幕
-        Row(
-            Modifier
-                .weight(1f)
-                .clickable(enabled = currentSong != null) { onBarClick() },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (currentSong != null) {
-                MiniVinylRecord(isPlaying = isPlaying, coverUri = currentSong.coverUriString)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = currentSong.title,
-                        color = onBg,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = currentSong.artist,
-                        color = onBg.copy(alpha = 0.6f),
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            } else {
-                Text(
-                    text = "尚未播放",
-                    color = onBg.copy(alpha = 0.5f),
-                    style = MaterialTheme.typography.bodyMedium
+    // 旋轉動畫
+    val rotation = remember { Animatable(0f) }
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                rotation.animateTo(
+                    targetValue = rotation.value + 360f,
+                    animationSpec = tween(10000, easing = LinearEasing) // 10秒轉一圈
                 )
             }
         }
+    }
 
-        // 右側：播放/暫停按鈕
-        if (currentSong != null) {
-            IconButton(
-                onClick = {
-                    if (player.isPlaying) player.pause() else player.play()
-                },
-                modifier = Modifier.size(48.dp)
+    // 如果沒有歌曲，顯示簡單的佔位條
+    if (currentSong == null) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(backgroundColor)
+                .navigationBarsPadding()
+                .height(64.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text("尚未播放", color = onBg.copy(alpha = 0.5f))
+        }
+        return
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .wrapContentHeight()
+    ) {
+        // 統一的導航欄避讓層
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+        ) {
+            // 右側藍色矩形背景 (略低於圓盤)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .padding(start = 80.dp) // 避開左側圓盤
+                    .background(backgroundColor)
+                    .align(Alignment.BottomCenter), // 底部對齊
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = "播放/暫停",
-                    tint = accent,
-                    modifier = Modifier.size(36.dp)
+                // 歌曲資訊 (點擊展開全螢幕)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onBarClick() }
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Text(
+                        currentSong.title,
+                        color = onBg,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        currentSong.artist,
+                        color = onBg.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                // 播放/暫停按鈕
+                IconButton(
+                    onClick = {
+                        if (player.isPlaying) player.pause() else player.play()
+                    },
+                    modifier = Modifier.padding(end = 12.dp)
+                ) {
+                    Icon(
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = "播放/暫停",
+                        tint = accent,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            // 左側圓形專輯封面 (黑膠唱片樣式)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 16.dp)
+                    .size(80.dp) // 比背景條高，會露出上半部分
+                    .rotate(rotation.value)
+                    .clip(CircleShape)
+                    .background(Color(0xFF1A1A1A)) // 模擬黑膠底色
+                    .clickable { onBarClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                // 封面圖 (若有設置的話)
+                if (currentSong.coverUriString != null) {
+                    AsyncImage(
+                        model = currentSong.coverUriString,
+                        contentDescription = "專輯封面",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .padding(10.dp) // 留出一圈黑膠邊緣
+                    )
+                } else {
+                    // 如果沒有封面，顯示主題色圓底
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(10.dp)
+                            .clip(CircleShape)
+                            .background(accent.copy(alpha = 0.8f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                // 中心孔洞
+                Box(
+                    Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black)
+                        .align(Alignment.Center)
                 )
             }
         }
