@@ -288,7 +288,7 @@ fun AppContent(themePrefs: ThemePrefs) {
     val bgColor = MaterialTheme.colorScheme.background
     val accent = MaterialTheme.colorScheme.primary
     
-    // ✅ 獲取 LocalConfiguration
+    // 獲取 LocalConfiguration
     val config = LocalConfiguration.current
     val screenWidthDp = config.screenWidthDp.coerceAtLeast(1)
     val screenHeightDp = config.screenHeightDp.coerceAtLeast(1)
@@ -339,7 +339,7 @@ fun AppContent(themePrefs: ThemePrefs) {
     var songToSetCover by remember { mutableStateOf<Song?>(null) }
 
     // ---------- 圖片裁切邏輯 ----------
-    // 1. 專輯封面裁切 (1:1 圓形)
+    // 1. 專輯封面裁切 (正方形)
     var sourceCoverUri by remember { mutableStateOf<Uri?>(null) }
     val cropCoverLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
         if (result.isSuccessful) {
@@ -379,11 +379,11 @@ fun AppContent(themePrefs: ThemePrefs) {
             val options = CropImageOptions(
                 guidelines = CropImageView.Guidelines.ON_TOUCH,
                 fixAspectRatio = true,
-                aspectRatioX = screenWidthDp.coerceAtLeast(1),
-                aspectRatioY = screenHeightDp.coerceAtLeast(1),
-                cropShape = CropImageView.CropShape.OVAL,
-                maxCropResultWidth = 4096,  // 限制最大寬度防止 OOM
-                maxCropResultHeight = 4096  // 限制最大高度防止 OOM
+                aspectRatioX = 1,
+                aspectRatioY = 1,
+                cropShape = CropImageView.CropShape.RECTANGLE, // ✅ 改為方形，避免變形
+                maxCropResultWidth = 1024,
+                maxCropResultHeight = 1024
             )
             cropCoverLauncher.launch(CropImageContractOptions(uri, options))
         }
@@ -415,8 +415,8 @@ fun AppContent(themePrefs: ThemePrefs) {
                 fixAspectRatio = true,
                 aspectRatioX = screenWidthDp, // 使用外部變數
                 aspectRatioY = screenHeightDp, // 使用外部變數
-                maxCropResultWidth = 2160,  // 限制最大寬度 (4K 寬)
-                maxCropResultHeight = 3840  // 限制最大高度 (4K 高)
+                maxCropResultWidth = 2160,
+                maxCropResultHeight = 3840
             )
             cropBgLauncher.launch(CropImageContractOptions(uri, options))
         }
