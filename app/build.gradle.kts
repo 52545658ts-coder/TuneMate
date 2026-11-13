@@ -63,7 +63,7 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Image Cropper (手勢縮放、旋轉、裁切)
-    implementation("com.canhub.cropper:android-image-cropper:4.6.0")
+implementation("com.vanniktech:android-image-cropper:4.6.0")
 
     // Guava (Media3 传递依赖，显式声明以确保 ListenableFuture 可用)
     implementation("com.google.guava:guava:33.3.0-android")
