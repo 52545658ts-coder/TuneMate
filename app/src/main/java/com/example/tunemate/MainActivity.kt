@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Build
@@ -33,6 +34,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -113,6 +115,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -124,6 +127,10 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
+import com.canhub.cropper.CropImageView
 import com.example.tunemate.data.PlaybackState
 import com.example.tunemate.data.ThemePrefs
 import com.example.tunemate.data.backgroundFlow
@@ -326,35 +333,85 @@ fun AppContent(themePrefs: ThemePrefs) {
     var songToAddToPlaylist by remember { mutableStateOf<Song?>(null) }
     var songToSetCover by remember { mutableStateOf<Song?>(null) }
 
-    // 封面選擇器
-    val coverLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        val targetSong = songToSetCover
-        if (uri != null && targetSong != null) {
-            scope.launch {
-                val savedCoverUri = context.saveCoverImage(uri, targetSong.id)
-                if (savedCoverUri != null) {
-                    // 1. 更新所有歌曲
-                    val curSongs = context.songsFlow().first()
-                    context.saveSongs(curSongs.map {
-                        if (it.uriString == targetSong.uriString) it.copy(coverUriString = savedCoverUri) else it
-                    })
-                    // 2. 更新歌單
-                    val curPlaylists = context.playlistsFlow().first()
-                    context.savePlaylists(curPlaylists.map { pl ->
-                        pl.copy(songs = pl.songs.map {
+    // ---------- 圖片裁切邏輯 ----------
+    // 1. 專輯封面裁切 (1:1 圓形)
+    var sourceCoverUri by remember { mutableStateOf<Uri?>(null) }
+    val cropCoverLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
+        if (result.isSuccessful) {
+            val croppedUri = result.uriContent
+            val targetSong = songToSetCover
+            if (croppedUri != null && targetSong != null) {
+                scope.launch {
+                    val savedCoverUri = context.saveCoverImage(croppedUri, targetSong.id)
+                    if (savedCoverUri != null) {
+                        // 更新所有歌曲
+                        val curSongs = context.songsFlow().first()
+                        context.saveSongs(curSongs.map {
                             if (it.uriString == targetSong.uriString) it.copy(coverUriString = savedCoverUri) else it
                         })
-                    })
-                    // 3. 更新當前播放狀態
-                    if (currentSong?.uriString == targetSong.uriString) {
-                        currentSong = currentSong?.copy(coverUriString = savedCoverUri)
+                        // 更新歌單
+                        val curPlaylists = context.playlistsFlow().first()
+                        context.savePlaylists(curPlaylists.map { pl ->
+                            pl.copy(songs = pl.songs.map {
+                                if (it.uriString == targetSong.uriString) it.copy(coverUriString = savedCoverUri) else it
+                            })
+                        })
+                        // 更新當前狀態
+                        if (currentSong?.uriString == targetSong.uriString) {
+                            currentSong = currentSong?.copy(coverUriString = savedCoverUri)
+                        }
                     }
                 }
             }
         }
+        sourceCoverUri = null
         songToSetCover = null
+    }
+
+    val pickCoverLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            sourceCoverUri = uri
+            val options = CropImageOptions(
+                guidelines = CropImageView.Guidelines.ON_TOUCH,
+                fixAspectRatio = true,
+                aspectRatioX = 1,
+                aspectRatioY = 1,
+                cropShape = CropImageView.CropShape.OVAL
+            )
+            cropCoverLauncher.launch(CropImageContractOptions(uri, options))
+        }
+    }
+
+    // 2. 背景圖片裁切 (手機螢幕比例)
+    var sourceBgUri by remember { mutableStateOf<Uri?>(null) }
+    val cropBgLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
+        if (result.isSuccessful) {
+            val croppedUri = result.uriContent
+            if (croppedUri != null) {
+                scope.launch {
+                    val savedBg = context.saveBackgroundImage(croppedUri)
+                    if (savedBg != null) {
+                        backgroundUri = savedBg
+                        context.saveBackground(savedBg.toString(), blurRadius, brightness)
+                    }
+                }
+            }
+        }
+        sourceBgUri = null
+    }
+
+    val pickBgLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            sourceBgUri = uri
+            val config = LocalConfiguration.current
+            val options = CropImageOptions(
+                guidelines = CropImageView.Guidelines.ON_TOUCH,
+                fixAspectRatio = true,
+                aspectRatioX = config.screenWidthDp,
+                aspectRatioY = config.screenHeightDp
+            )
+            cropBgLauncher.launch(CropImageContractOptions(uri, options))
+        }
     }
 
     // 播放進度 (全屏頁面需要)
@@ -627,6 +684,7 @@ fun AppContent(themePrefs: ThemePrefs) {
                     brightness = bright
                     scope.launch { context.saveBackground(uri?.toString(), blur, bright) }
                 },
+                onPickBackground = { pickBgLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                 themePrefs = themePrefs,
                 onThemeChanged = { bg, ac, tx ->
                     scope.launch { context.saveTheme(bg, ac, tx) }
@@ -750,7 +808,7 @@ fun AppContent(themePrefs: ThemePrefs) {
                         onRename = { songToRename = song },
                         onSetCover = { 
                             songToSetCover = song
-                            coverLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            pickCoverLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         }
                     )
                 }
@@ -1031,7 +1089,6 @@ fun PlayerSheetContent(
             .safeDrawingPadding()
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        // 頂部導航
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -1046,7 +1103,6 @@ fun PlayerSheetContent(
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(Modifier.weight(1f))
-            // 右上角的三點菜單
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(Icons.Default.MoreVert, "更多", tint = onBg, modifier = Modifier.size(24.dp))
@@ -1075,7 +1131,6 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(32.dp))
 
-        // 黑膠唱片旋轉區塊
         Box(
             Modifier
                 .fillMaxWidth()
@@ -1087,7 +1142,6 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(32.dp))
 
-        // 歌曲信息
         Column(
             Modifier.fillMaxWidth()
         ) {
@@ -1110,7 +1164,6 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(24.dp))
 
-        // 進度條
         val sliderMax = durationMs.coerceAtLeast(1L).toFloat()
         val sliderValue = (if (isDragging) dragMs else positionMs.toFloat())
             .coerceIn(0f, sliderMax)
@@ -1145,7 +1198,6 @@ fun PlayerSheetContent(
 
         Spacer(Modifier.height(24.dp))
 
-        // 控制按鈕
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -1673,7 +1725,7 @@ private fun SongRow(
 }
 
 /* ============================================================
- * 底部播放控制條（極簡大頭像版）
+ * 底部播放控制條
  * ============================================================ */
 @Composable
 private fun BottomPlayerBar(
@@ -1720,23 +1772,20 @@ private fun BottomPlayerBar(
             .fillMaxWidth()
             .wrapContentHeight()
     ) {
-        // 統一的導航欄避讓層
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
         ) {
-            // 右側矩形背景 (避開左側圓盤，並確保高度)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp)
-                    .padding(start = 96.dp) // 加大左側邊距，避開變大的圓盤
+                    .padding(start = 96.dp) // 避開左側圓盤
                     .background(backgroundColor)
-                    .align(Alignment.BottomCenter), // 底部對齊
+                    .align(Alignment.BottomCenter),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 歌曲資訊 (點擊展開全螢幕)
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -1760,7 +1809,6 @@ private fun BottomPlayerBar(
                     )
                 }
 
-                // 播放/暫停按鈕
                 IconButton(
                     onClick = {
                         if (player.isPlaying) player.pause() else player.play()
@@ -1776,14 +1824,14 @@ private fun BottomPlayerBar(
                 }
             }
 
-            // 左側圓形專輯封面（超出邊界）
+            // 左側圓形專輯封面 (溢出邊界)
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomStart) // 對齊左下角
-                    .offset(x = (-32).dp, y = (24).dp) // 往左下偏移，使其溢出邊界
-                    .size(120.dp) // 尺寸加大
-                    .rotate(rotation.value) // 旋轉
-                    .clip(CircleShape) // 保持圓形
+                    .align(Alignment.BottomStart)
+                    .offset(x = (-32).dp, y = (24).dp) // 往左下偏移
+                    .size(120.dp)
+                    .rotate(rotation.value)
+                    .clip(CircleShape)
                     .clickable { onBarClick() },
                 contentAlignment = Alignment.Center
             ) {
@@ -1792,10 +1840,9 @@ private fun BottomPlayerBar(
                         model = currentSong.coverUriString,
                         contentDescription = "專輯封面",
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize() // 填滿整個圓形
+                        modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    // 如果沒有封面，顯示主題色圓底
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1816,7 +1863,7 @@ private fun BottomPlayerBar(
 }
 
 /* ============================================================
- * 其餘組件保持不變
+ * 建立歌單對話框
  * ============================================================ */
 @Composable
 private fun CreatePlaylistDialog(
@@ -1960,6 +2007,9 @@ private fun ImportToPlaylistDialog(
     )
 }
 
+/* ============================================================
+ * 設置
+ * ============================================================ */
 private enum class SettingsSubPage { MAIN, BACKGROUND, THEME, EQUALIZER }
 
 @Composable
@@ -1968,6 +2018,7 @@ fun SettingsScreen(
     blurRadius: Float,
     brightness: Float,
     onBackgroundChanged: (Uri?, Float, Float) -> Unit,
+    onPickBackground: () -> Unit,
     themePrefs: ThemePrefs,
     onThemeChanged: (Long, Long, Long) -> Unit,
     onBack: () -> Unit
@@ -1991,6 +2042,7 @@ fun SettingsScreen(
             blurRadius = blurRadius,
             brightness = brightness,
             onBackgroundChanged = onBackgroundChanged,
+            onPickBackground = onPickBackground,
             onBack = { subPage = SettingsSubPage.MAIN }
         )
         SettingsSubPage.THEME -> ThemeSettingsPage(
@@ -2082,28 +2134,12 @@ private fun BackgroundSettingsPage(
     blurRadius: Float,
     brightness: Float,
     onBackgroundChanged: (Uri?, Float, Float) -> Unit,
+    onPickBackground: () -> Unit,
     onBack: () -> Unit
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingBlur by remember(blurRadius) { mutableFloatStateOf(blurRadius) }
     var pendingBrightness by remember(brightness) { mutableFloatStateOf(brightness) }
-    var saving by remember { mutableStateOf(false) }
-
-    val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            saving = true
-            scope.launch {
-                val saved = context.saveBackgroundImage(uri)
-                if (saved != null) {
-                    onBackgroundChanged(saved, pendingBlur, pendingBrightness)
-                }
-                saving = false
-            }
-        }
-    }
 
     Column(
         Modifier
@@ -2126,14 +2162,9 @@ private fun BackgroundSettingsPage(
         Spacer(Modifier.height(24.dp))
 
         Row {
-            Button(
-                enabled = !saving,
-                onClick = {
-                    imagePicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                }
-            ) { Text(if (saving) "正在儲存…" else "更換背景圖片") }
+            Button(onClick = onPickBackground) { 
+                Text("更換背景圖片") 
+            }
 
             if (backgroundUri != null) {
                 Spacer(Modifier.width(8.dp))
@@ -2171,11 +2202,17 @@ private fun BackgroundSettingsPage(
 
         Text("預覽", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
+        
+        // 預覽視窗跟隨螢幕比例
+        val config = LocalConfiguration.current
+        val screenRatio = config.screenWidthDp.toFloat() / config.screenHeightDp.toFloat()
+        
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(180.dp)
-                .background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp)),
+                .aspectRatio(screenRatio) // 使用螢幕比例
+                .background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
             if (backgroundUri != null) {
