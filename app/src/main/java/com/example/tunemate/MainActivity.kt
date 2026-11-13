@@ -26,7 +26,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -356,7 +355,7 @@ fun AppContent(themePrefs: ThemePrefs) {
         songToSetCover = null
     }
 
-    // 播放進度
+    // 播放進度 (全屏頁面需要)
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var isDragging by remember { mutableStateOf(false) }
@@ -689,30 +688,15 @@ fun AppContent(themePrefs: ThemePrefs) {
                     }
                 }
 
+                // 簡約版底部播放條
                 val barAlpha = ((1f - brightness) + 0.3f).coerceIn(0f, 1f)
                 val barBg = if (backgroundUri != null) Color.Black.copy(alpha = barAlpha) else MaterialTheme.colorScheme.background
                 BottomPlayerBar(
                     player = controller,
                     currentSong = currentSong,
                     isPlaying = isPlaying,
-                    playMode = playMode,
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    isDragging = isDragging,
-                    dragMs = dragMs,
                     backgroundColor = barBg,
-                    onBarClick = { if (currentSong != null) showPlayerSheet = true },
-                    onDragChange = { v ->
-                        isDragging = true
-                        dragMs = v
-                    },
-                    onDragFinish = {
-                        controller.seekTo(dragMs.toLong())
-                        positionMs = dragMs.toLong()
-                        isDragging = false
-                        if (!controller.isPlaying) controller.play()
-                    },
-                    onCyclePlayMode = { cyclePlayMode() }
+                    onBarClick = { if (currentSong != null) showPlayerSheet = true }
                 )
             }
         }
@@ -795,14 +779,12 @@ fun AppContent(themePrefs: ThemePrefs) {
                     onClick = {
                         scope.launch {
                             val trimmedName = newName.trim()
-                            // 1. 更新所有歌曲中該歌曲的名稱
                             val curSongs = context.songsFlow().first()
                             val updatedSongs = curSongs.map { 
                                 if (it.uriString == targetSong.uriString) it.copy(title = trimmedName) else it 
                             }
                             context.saveSongs(updatedSongs)
 
-                            // 2. 更新所有歌單中該歌曲的名稱
                             val curPlaylists = context.playlistsFlow().first()
                             val updatedPlaylists = curPlaylists.map { pl ->
                                 pl.copy(songs = pl.songs.map { 
@@ -811,7 +793,6 @@ fun AppContent(themePrefs: ThemePrefs) {
                             }
                             context.savePlaylists(updatedPlaylists)
                             
-                            // 3. 如果是當前正在播放的歌曲，同步更新狀態
                             if (currentSong?.uriString == targetSong.uriString) {
                                 currentSong = currentSong?.copy(title = trimmedName)
                             }
@@ -827,7 +808,6 @@ fun AppContent(themePrefs: ThemePrefs) {
     // ---------- 添加至其他歌單對話框 ----------
     if (songToAddToPlaylist != null) {
         val targetSong = songToAddToPlaylist!!
-        // 過濾掉已經包含該歌曲的歌單
         val availablePlaylists = playlists.filter { pl ->
             pl.songs.none { it.uriString == targetSong.uriString }
         }
@@ -1225,7 +1205,7 @@ fun PlayerSheetContent(
 }
 
 /* ============================================================
- * 黑膠唱片組件（支援專輯封面）
+ * 黑膠唱片組件（全螢幕版）
  * ============================================================ */
 @Composable
 fun VinylRecord(isPlaying: Boolean, coverUri: String?) {
@@ -1278,7 +1258,6 @@ fun VinylRecord(isPlaying: Boolean, coverUri: String?) {
             )
         }
 
-        // 專輯封面或預設圖標
         if (coverUri != null) {
             AsyncImage(
                 model = coverUri,
@@ -1305,13 +1284,63 @@ fun VinylRecord(isPlaying: Boolean, coverUri: String?) {
             }
         }
         
-        // 中心孔
         Box(
             Modifier
                 .size(20.dp)
                 .clip(CircleShape)
                 .background(Color.Black)
         )
+    }
+}
+
+/* ============================================================
+ * 迷你黑膠唱片組件（底部播放條專用）
+ * ============================================================ */
+@Composable
+fun MiniVinylRecord(isPlaying: Boolean, coverUri: String?) {
+    val rotation = remember { Animatable(0f) }
+    val accent = MaterialTheme.colorScheme.primary
+
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                val remaining = 360f - (rotation.value % 360f)
+                rotation.animateTo(
+                    targetValue = rotation.value + remaining + 360f,
+                    animationSpec = tween(
+                        durationMillis = ((remaining + 360f) * 5).toInt(), // 轉速快一點
+                        easing = LinearEasing
+                    )
+                )
+            }
+        }
+    }
+
+    Box(
+        Modifier
+            .size(44.dp)
+            .rotate(rotation.value),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(color = Color(0xFF1A1A1A))
+            drawCircle(
+                color = Color.White.copy(alpha = 0.1f),
+                radius = size.width / 2.5f,
+                style = Stroke(width = 1f)
+            )
+        }
+        
+        if (coverUri != null) {
+            AsyncImage(
+                model = coverUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(20.dp).clip(CircleShape)
+            )
+        } else {
+            Box(Modifier.size(20.dp).clip(CircleShape).background(accent.copy(alpha = 0.8f)))
+        }
     }
 }
 
@@ -1693,126 +1722,77 @@ private fun SongRow(
 }
 
 /* ============================================================
- * 底部播放控制條
+ * 底部播放控制條（簡約版）
  * ============================================================ */
 @Composable
 private fun BottomPlayerBar(
     player: Player,
     currentSong: Song?,
     isPlaying: Boolean,
-    playMode: PlayMode,
-    positionMs: Long,
-    durationMs: Long,
-    isDragging: Boolean,
-    dragMs: Float,
     backgroundColor: Color,
-    onBarClick: () -> Unit,
-    onDragChange: (Float) -> Unit,
-    onDragFinish: () -> Unit,
-    onCyclePlayMode: () -> Unit
+    onBarClick: () -> Unit
 ) {
     val accent = MaterialTheme.colorScheme.primary
     val onBg = MaterialTheme.colorScheme.onBackground
 
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
             .background(backgroundColor)
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 8.dp)
+            .height(60.dp), // 固定高度讓它看起來緊湊
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        // 左側：黑膠 + 歌曲資訊，點擊展開全螢幕
         Row(
-            Modifier.fillMaxWidth().clickable { onBarClick() },
+            Modifier
+                .weight(1f)
+                .clickable(enabled = currentSong != null) { onBarClick() },
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = currentSong?.let { "正在播放：${it.title}" } ?: "尚未播放",
-                color = if (currentSong != null) onBg else onBg.copy(alpha = 0.5f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        val sliderMax = durationMs.coerceAtLeast(1L).toFloat()
-        val sliderValue = (if (isDragging) dragMs else positionMs.toFloat())
-            .coerceIn(0f, sliderMax)
-
-        Slider(
-            value = sliderValue,
-            onValueChange = onDragChange,
-            onValueChangeFinished = onDragFinish,
-            valueRange = 0f..sliderMax,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                formatMs(if (isDragging) dragMs.toLong() else positionMs),
-                color = onBg.copy(alpha = 0.7f),
-                style = MaterialTheme.typography.bodySmall
-            )
-            Text(
-                formatMs(durationMs),
-                color = onBg.copy(alpha = 0.7f),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
-            }) {
-                Icon(
-                    Icons.Default.SkipPrevious,
-                    "上一首",
-                    tint = onBg,
-                    modifier = Modifier.size(32.dp)
+            if (currentSong != null) {
+                MiniVinylRecord(isPlaying = isPlaying, coverUri = currentSong.coverUriString)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = currentSong.title,
+                        color = onBg,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = currentSong.artist,
+                        color = onBg.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            } else {
+                Text(
+                    text = "尚未播放",
+                    color = onBg.copy(alpha = 0.5f),
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
+        }
 
-            IconButton(onClick = {
-                if (player.isPlaying) player.pause() else player.play()
-            }) {
+        // 右側：播放/暫停按鈕
+        if (currentSong != null) {
+            IconButton(
+                onClick = {
+                    if (player.isPlaying) player.pause() else player.play()
+                },
+                modifier = Modifier.size(48.dp)
+            ) {
                 Icon(
                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    "播放/暫停",
-                    tint = onBg,
-                    modifier = Modifier.size(44.dp)
-                )
-            }
-
-            IconButton(onClick = {
-                if (player.hasNextMediaItem()) player.seekToNextMediaItem()
-            }) {
-                Icon(
-                    Icons.Default.SkipNext,
-                    "下一首",
-                    tint = onBg,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-
-            IconButton(onClick = onCyclePlayMode) {
-                val (icon, label) = when (playMode) {
-                    PlayMode.REPEAT_ONE -> Icons.Default.RepeatOne to "單曲循環"
-                    PlayMode.REPEAT_ALL -> Icons.Default.Repeat to "歌單循環"
-                    PlayMode.PLAY_ONCE -> Icons.Default.Repeat to "只播一次"
-                }
-                val tint = if (playMode == PlayMode.PLAY_ONCE) onBg.copy(alpha = 0.5f) else accent
-                Icon(
-                    icon,
-                    label,
-                    tint = tint,
-                    modifier = Modifier.size(28.dp)
+                    contentDescription = "播放/暫停",
+                    tint = accent,
+                    modifier = Modifier.size(36.dp)
                 )
             }
         }
