@@ -381,7 +381,7 @@ fun AppContent(themePrefs: ThemePrefs) {
                 fixAspectRatio = true,
                 aspectRatioX = 1,
                 aspectRatioY = 1,
-                cropShape = CropImageView.CropShape.RECTANGLE, // ✅ 改為方形，避免變形
+                cropShape = CropImageView.CropShape.RECTANGLE, // ✅ 正方形
                 maxCropResultWidth = 1024,
                 maxCropResultHeight = 1024
             )
@@ -1733,7 +1733,7 @@ private fun SongRow(
 }
 
 /* ============================================================
- * 底部播放控制條
+ * 底部播放控制條（消除空隙版）
  * ============================================================ */
 @Composable
 private fun BottomPlayerBar(
@@ -1785,20 +1785,21 @@ private fun BottomPlayerBar(
                 .fillMaxWidth()
                 .navigationBarsPadding()
         ) {
+            // ✅ 1. 右側矩形背景 (延伸到最左側，消除空隙)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp)
-                    .padding(start = 96.dp) // 避開左側圓盤
-                    .background(backgroundColor)
+                    .background(backgroundColor) // 移除 padding，讓背景填滿全寬
                     .align(Alignment.BottomCenter),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // 歌曲資訊 (點擊展開全螢幕)
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .clickable { onBarClick() }
-                        .padding(horizontal = 8.dp)
+                        .padding(start = 96.dp, end = 8.dp) // ✅ 將原本的避讓邊距移到內容上
                 ) {
                     Text(
                         currentSong.title,
@@ -1832,7 +1833,7 @@ private fun BottomPlayerBar(
                 }
             }
 
-            // 左側圓形專輯封面（溢出邊界）
+            // ✅ 2. 左側圓形專輯封面 (蓋在背景上方，溢出邊界)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
