@@ -1775,7 +1775,7 @@ private fun BottomPlayerBar(
                 }
             }
 
-            // 左側圓形專輯封面 (黑膠唱片樣式)
+            // 左側圓形專輯封面 (無黑膠邊距，填滿圓形)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -1783,28 +1783,21 @@ private fun BottomPlayerBar(
                     .size(80.dp) // 比背景條高，會露出上半部分
                     .rotate(rotation.value)
                     .clip(CircleShape)
-                    .background(Color(0xFF1A1A1A)) // 模擬黑膠底色
                     .clickable { onBarClick() },
                 contentAlignment = Alignment.Center
             ) {
-                // 封面圖 (若有設置的話)
                 if (currentSong.coverUriString != null) {
                     AsyncImage(
                         model = currentSong.coverUriString,
                         contentDescription = "專輯封面",
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape)
-                            .padding(10.dp) // 留出一圈黑膠邊緣
+                        modifier = Modifier.fillMaxSize() // 填滿整個圓形
                     )
                 } else {
                     // 如果沒有封面，顯示主題色圓底
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(10.dp)
-                            .clip(CircleShape)
                             .background(accent.copy(alpha = 0.8f)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1812,18 +1805,10 @@ private fun BottomPlayerBar(
                             Icons.Default.MusicNote,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(32.dp)
                         )
                     }
                 }
-                // 中心孔洞
-                Box(
-                    Modifier
-                        .size(12.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black)
-                        .align(Alignment.Center)
-                )
             }
         }
     }
