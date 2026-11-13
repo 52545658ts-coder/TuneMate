@@ -1334,13 +1334,13 @@ fun VinylRecord(isPlaying: Boolean, coverUri: String?) {
                 Modifier
                     .size(140.dp)
                     .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.8f)),
+                    .background(accent), // ✅ 改為完全不透明
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.Default.MusicNote,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.8f),
+                    tint = Color.White,
                     modifier = Modifier.size(60.dp)
                 )
             }
@@ -1855,7 +1855,7 @@ private fun BottomPlayerBar(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(accent.copy(alpha = 0.8f)),
+                            .background(accent), // ✅ 改為完全不透明
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
