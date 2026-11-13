@@ -382,8 +382,8 @@ fun AppContent(themePrefs: ThemePrefs) {
                 aspectRatioX = 1,
                 aspectRatioY = 1,
                 cropShape = CropImageView.CropShape.OVAL,
-                maxCropResultWidth = 1024,  // 限制最大寬度防止 OOM
-                maxCropResultHeight = 1024  // 限制最大高度防止 OOM
+                maxCropResultWidth = 4096,  // 限制最大寬度防止 OOM
+                maxCropResultHeight = 4096  // 限制最大高度防止 OOM
             )
             cropCoverLauncher.launch(CropImageContractOptions(uri, options))
         }
