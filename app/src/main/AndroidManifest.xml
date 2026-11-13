@@ -42,10 +42,10 @@
             </intent-filter>
         </activity>
 
-        <!-- ✅ Android-Image-Cropper 的裁切 Activity -->
+        <!-- ✅ 修正：使用庫自帶的 AppCompat 主題 -->
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
-            android:theme="@style/Base.Theme.TuneMate" />
+            android:theme="@style/Base.Theme.AppCompat" />
 
         <service
             android:name=".playback.PlaybackService"
