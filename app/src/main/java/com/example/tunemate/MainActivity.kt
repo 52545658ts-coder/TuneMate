@@ -288,10 +288,10 @@ fun AppContent(themePrefs: ThemePrefs) {
     val bgColor = MaterialTheme.colorScheme.background
     val accent = MaterialTheme.colorScheme.primary
     
-    // ✅ 在這裡獲取 LocalConfiguration，避免在 Lambda 中報錯
+    // ✅ 獲取 LocalConfiguration
     val config = LocalConfiguration.current
-    val screenWidthDp = config.screenWidthDp
-    val screenHeightDp = config.screenHeightDp
+    val screenWidthDp = config.screenWidthDp.coerceAtLeast(1)
+    val screenHeightDp = config.screenHeightDp.coerceAtLeast(1)
 
     // 持久化資料
     val songsFlow = remember(context) { context.songsFlow() }
@@ -381,7 +381,9 @@ fun AppContent(themePrefs: ThemePrefs) {
                 fixAspectRatio = true,
                 aspectRatioX = 1,
                 aspectRatioY = 1,
-                cropShape = CropImageView.CropShape.OVAL
+                cropShape = CropImageView.CropShape.OVAL,
+                maxCropResultWidth = 1024,  // 限制最大寬度防止 OOM
+                maxCropResultHeight = 1024  // 限制最大高度防止 OOM
             )
             cropCoverLauncher.launch(CropImageContractOptions(uri, options))
         }
@@ -412,7 +414,9 @@ fun AppContent(themePrefs: ThemePrefs) {
                 guidelines = CropImageView.Guidelines.ON_TOUCH,
                 fixAspectRatio = true,
                 aspectRatioX = screenWidthDp, // 使用外部變數
-                aspectRatioY = screenHeightDp // 使用外部變數
+                aspectRatioY = screenHeightDp, // 使用外部變數
+                maxCropResultWidth = 2160,  // 限制最大寬度 (4K 寬)
+                maxCropResultHeight = 3840  // 限制最大高度 (4K 高)
             )
             cropBgLauncher.launch(CropImageContractOptions(uri, options))
         }
