@@ -45,7 +45,7 @@
         <!-- ✅ Android-Image-Cropper 的裁切 Activity -->
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
-            android:theme="@style/Theme.TuneMate" />
+            android:theme="@style/Base.Theme.TuneMate" />
 
         <service
             android:name=".playback.PlaybackService"
