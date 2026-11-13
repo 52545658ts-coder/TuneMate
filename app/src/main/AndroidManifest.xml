@@ -1,23 +1,23 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 读取音频 -->
+    <!-- 讀取音頻 -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- 前台播放服务 -->
+    <!-- 前台播放服務 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
-    <!-- 通知权限 (Android 13+) -->
+    <!-- 通知權限 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- 唤醒锁，保证关屏播放 -->
+    <!-- 喚醒鎖，保證關屏播放 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- ✅ queries 必须在 application 之外、manifest 之内 -->
+    <!-- ✅ queries 必須在 application 之外、manifest 之內 -->
     <queries>
         <intent>
             <action android:name="androidx.media3.session.MediaSessionService" />
@@ -41,6 +41,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- ✅ Android-Image-Cropper 的裁切 Activity -->
+        <activity
+            android:name="com.canhub.cropper.CropImageActivity"
+            android:theme="@style/Theme.TuneMate" />
 
         <service
             android:name=".playback.PlaybackService"
