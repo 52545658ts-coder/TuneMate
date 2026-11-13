@@ -379,8 +379,8 @@ fun AppContent(themePrefs: ThemePrefs) {
             val options = CropImageOptions(
                 guidelines = CropImageView.Guidelines.ON_TOUCH,
                 fixAspectRatio = true,
-                aspectRatioX = 1,
-                aspectRatioY = 1,
+                aspectRatioX = screenWidthDp.coerceAtLeast(1),
+                aspectRatioY = screenHeightDp.coerceAtLeast(1),
                 cropShape = CropImageView.CropShape.OVAL,
                 maxCropResultWidth = 4096,  // 限制最大寬度防止 OOM
                 maxCropResultHeight = 4096  // 限制最大高度防止 OOM
