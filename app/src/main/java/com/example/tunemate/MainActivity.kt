@@ -287,6 +287,11 @@ fun AppContent(themePrefs: ThemePrefs) {
 
     val bgColor = MaterialTheme.colorScheme.background
     val accent = MaterialTheme.colorScheme.primary
+    
+    // ✅ 在這裡獲取 LocalConfiguration，避免在 Lambda 中報錯
+    val config = LocalConfiguration.current
+    val screenWidthDp = config.screenWidthDp
+    val screenHeightDp = config.screenHeightDp
 
     // 持久化資料
     val songsFlow = remember(context) { context.songsFlow() }
@@ -403,12 +408,11 @@ fun AppContent(themePrefs: ThemePrefs) {
     val pickBgLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             sourceBgUri = uri
-            val config = LocalConfiguration.current
             val options = CropImageOptions(
                 guidelines = CropImageView.Guidelines.ON_TOUCH,
                 fixAspectRatio = true,
-                aspectRatioX = config.screenWidthDp,
-                aspectRatioY = config.screenHeightDp
+                aspectRatioX = screenWidthDp, // 使用外部變數
+                aspectRatioY = screenHeightDp // 使用外部變數
             )
             cropBgLauncher.launch(CropImageContractOptions(uri, options))
         }
@@ -1824,7 +1828,7 @@ private fun BottomPlayerBar(
                 }
             }
 
-            // 左側圓形專輯封面 (溢出邊界)
+            // 左側圓形專輯封面（溢出邊界）
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
